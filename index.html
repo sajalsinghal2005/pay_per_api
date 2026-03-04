@@ -9,6 +9,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            const API_BASE_URL = 'http://localhost:3000';
+
             // Global Chart Instances to prevent reuse errors
             let userTrafficChartInstance = null;
             let userUsageWeekChartInstance = null;
@@ -50,7 +52,7 @@
 
 
             window.suspendUser = async (id) => {
-                await fetch('/api/admin/suspend', {
+                await fetch(API_BASE_URL + '/api/admin/suspend', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ userId: id })
@@ -59,7 +61,7 @@
             };
 
             window.activateUser = async (id) => {
-                await fetch('/api/admin/activate', {
+                await fetch(API_BASE_URL + '/api/admin/activate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ userId: id })
@@ -78,7 +80,7 @@
                 const mode = document.getElementById('admin-maintenance-mode').checked;
 
                 try {
-                    const res = await fetch('/api/admin/config', {
+                    const res = await fetch(API_BASE_URL + '/api/admin/config', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ userRateLimit: limit, globalTrafficCap: cap, maintenanceMode: mode })
@@ -100,7 +102,7 @@
                 const price = prompt("Enter Price (credits):", "100");
 
                 try {
-                    const res = await fetch('/api/admin/apis', {
+                    const res = await fetch(API_BASE_URL + '/api/admin/apis', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ name, provider, description, category, price: parseInt(price) || 0, image: 'https://via.placeholder.com/300' })
@@ -124,7 +126,7 @@
 
                 try {
                     // Quick PUT, in reality you'd prompt all fields or use a modal.
-                    const res = await fetch(`/api/admin/apis/${id}`, {
+                    const res = await fetch(API_BASE_URL + `/api/admin/apis/${id}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ name, provider: 'Updated', description: 'Updated Description', category: 'Updated', price: parseInt(price) || 0, image: 'https://via.placeholder.com/300' })
@@ -144,7 +146,7 @@
             window.toggleApiStatus = async (id, currentStatus) => {
                 const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
                 try {
-                    const res = await fetch(`/api/admin/apis/${id}/status`, {
+                    const res = await fetch(API_BASE_URL + `/api/admin/apis/${id}/status`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ status: newStatus })
@@ -162,7 +164,7 @@
             window.loadUserSettings = async () => {
                 if (!currentUser) return;
                 try {
-                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/settings`);
+                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`);
                     const data = await res.json();
                     if (data.success) {
                         const s = data.settings;
@@ -198,7 +200,7 @@
                 }
 
                 try {
-                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/settings`, {
+                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ firstName, lastName, email, organization, password })
@@ -234,7 +236,7 @@
                 }
 
                 try {
-                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/settings`, {
+                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ firstName, lastName, email, organization, autoRecharge, lowCreditNotifications, sessionTimeout, twoFactorAuth })
@@ -262,7 +264,7 @@
                     btn.textContent = 'Show';
                 } else {
                     // Fetch real key if not cached or just use a state
-                    fetch(`http://localhost:3000/api/user/${currentUser.id}/settings`)
+                    fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`)
                         .then(res => res.json())
                         .then(data => {
                             if (data.success) {
@@ -275,7 +277,7 @@
             };
 
             window.copyApiKey = () => {
-                fetch(`http://localhost:3000/api/user/${currentUser.id}/settings`)
+                fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`)
                     .then(res => res.json())
                     .then(data => {
                         if (data.success) {
@@ -288,7 +290,7 @@
             window.regenerateApiKey = async () => {
                 if (!confirm("Are you sure? Your old API key will stop working immediately.")) return;
                 try {
-                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/apiKey/regenerate`, { method: 'POST' });
+                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/apiKey/regenerate`, { method: 'POST' });
                     const data = await res.json();
                     if (data.success) {
                         showToast("New API key generated!");
@@ -311,21 +313,17 @@
             // ============================
             const loginView = document.getElementById('login-view');
             const signupView = document.getElementById('signup-view');
-            const otpView = document.getElementById('otp-view');
             const forgotPassView = document.getElementById('forgot-pass-view');
             const resetPassView = document.getElementById('reset-pass-view');
             const appView = document.getElementById('app-view');
 
             const loginForm = document.getElementById('login-form');
             const signupForm = document.getElementById('signup-form');
-            const otpForm = document.getElementById('otp-form');
             const forgotPassForm = document.getElementById('forgot-pass-form');
             const resetPassForm = document.getElementById('reset-pass-form');
 
             const toggleSignupBtn = document.getElementById('go-to-signup');
             const toggleLoginBtn = document.getElementById('go-to-login');
-            const backToLoginBtn = document.getElementById('back-to-login');
-            const goToForgotPassBtn = document.getElementById('go-to-forgot-pass');
             const backToLoginForgotBtn = document.getElementById('back-to-login-forgot');
             const backToLoginResetBtn = document.getElementById('back-to-login-reset');
 
@@ -345,17 +343,19 @@
                 loginView.style.display = 'flex';
             });
 
-            backToLoginBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                otpView.style.display = 'none';
-                loginView.style.display = 'flex';
-            });
-
             goToForgotPassBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 loginView.style.display = 'none';
                 forgotPassView.style.display = 'flex';
             });
+            const backToLoginBtn = document.getElementById('back-to-login');
+            if (backToLoginBtn) {
+                backToLoginBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    // otpView is removed, so this shouldn't be needed, but just in case
+                    loginView.style.display = 'flex';
+                });
+            }
 
             backToLoginForgotBtn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -425,7 +425,7 @@
                 }
 
                 try {
-                    const res = await fetch('http://localhost:3000/api/auth/register', {
+                    const res = await fetch(API_BASE_URL + '/api/auth/register', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ firstName: fname, lastName: lname, email, contact, password: pass })
@@ -466,7 +466,7 @@
                 const email = document.getElementById('forgot-pass-email').value;
 
                 try {
-                    const res = await fetch('http://localhost:3000/api/auth/forgot-password', {
+                    const res = await fetch(API_BASE_URL + '/api/auth/forgot-password', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email })
@@ -490,7 +490,6 @@
             // Handle Reset Password Submission
             resetPassForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const otp = document.getElementById('reset-pass-otp').value;
                 const newPass = document.getElementById('reset-new-pass').value;
                 const confirmNewPass = document.getElementById('reset-confirm-pass').value;
 
@@ -506,10 +505,10 @@
                 }
 
                 try {
-                    const res = await fetch('http://localhost:3000/api/auth/reset-password', {
+                    const res = await fetch(API_BASE_URL + '/api/auth/reset-password', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: resetUserId, otp, newPassword: newPass })
+                        body: JSON.stringify({ userId: resetUserId, newPassword: newPass })
                     });
                     const data = await res.json();
 
@@ -532,7 +531,7 @@
                 const pass = document.getElementById('login-pass').value;
 
                 try {
-                    const res = await fetch('http://localhost:3000/api/auth/login', {
+                    const res = await fetch(API_BASE_URL + '/api/auth/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email: loginEmail, password: pass })
@@ -540,16 +539,8 @@
                     const data = await res.json();
 
                     if (data.success) {
-                        if (data.requireOtp) {
-                            // Show OTP Screen
-                            loginUserId = data.userId; // Save userId
-                            loginView.style.display = 'none';
-                            otpView.style.display = 'flex';
-                            document.getElementById('otp-message').textContent = data.message;
-                        } else {
-                            currentUser = data.user;
-                            loginSuccess();
-                        }
+                        currentUser = data.user;
+                        loginSuccess();
                     } else {
                         showToast("Login Failed: " + data.message, "error");
                     }
@@ -559,57 +550,6 @@
                 }
             });
 
-            // Handle OTP Verification
-            otpForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const otp = document.getElementById('otp-input').value;
-
-                try {
-                    const res = await fetch('http://localhost:3000/api/auth/verify-otp', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: loginUserId, otp })
-                    });
-                    const data = await res.json();
-
-                    if (data.success) {
-                        currentUser = data.user;
-                        otpView.style.display = 'none';
-                        loginSuccess();
-                    } else {
-                        showToast("Verification Failed: " + data.message, "error");
-                    }
-                } catch (err) {
-                    console.error(err);
-                    showToast("An error occurred during verification.", "error");
-                }
-            });
-
-            // Resend OTP handler
-            document.getElementById('resend-otp').addEventListener('click', async (e) => {
-                e.preventDefault();
-                if (!loginUserId) {
-                    showToast('Cannot resend OTP: no user context', 'error');
-                    return;
-                }
-                try {
-                    const res = await fetch('http://localhost:3000/api/auth/resend-otp', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: loginUserId })
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        showToast(data.message);
-                        document.getElementById('otp-message').textContent = data.message;
-                    } else {
-                        showToast('Resend Failed: ' + data.message, 'error');
-                    }
-                } catch (err) {
-                    console.error(err);
-                    showToast('An error occurred during OTP resend.', 'error');
-                }
-            });
 
             function loginSuccess() {
                 // Hide Auth Views
@@ -637,7 +577,7 @@
 
             async function loadUserDashboard() {
                 try {
-                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/dashboard`);
+                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/dashboard`);
                     const data = await res.json();
 
                     // Update Credits (Box and Sidebar)
@@ -695,7 +635,7 @@
                         }
 
                         // Fetch usage data for the chart
-                        const usageRes = await fetch(`http://localhost:3000/api/user/${currentUser.id}/usage`);
+                        const usageRes = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/usage`);
                         const usageData = await usageRes.json();
 
                         // Collapse datasets into a single daily total for the dashboard chart
@@ -779,7 +719,7 @@
                     // Simulate payment gateway delay
                     await new Promise(r => setTimeout(r, 1500));
 
-                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/topup`, {
+                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/topup`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ amount })
@@ -885,7 +825,7 @@
                 });
 
                 // 3. Initialize Usage Breakdown Chart (Stacked Bar)
-                fetch(`http://localhost:3000/api/user/${currentUser.id}/usage`)
+                fetch(API_BASE_URL + `/api/user/${currentUser.id}/usage`)
                     .then(res => res.json())
                     .then(data => {
                         if (data.success && data.datasets.length > 0) {
@@ -955,7 +895,7 @@
 
             async function loadMarketplace() {
                 try {
-                    const res = await fetch('http://localhost:3000/api/apis');
+                    const res = await fetch(API_BASE_URL + '/api/apis');
                     const apis = await res.json();
                     allMarketplaceApis = apis;
                     renderMarketplace(apis);
@@ -1015,7 +955,7 @@
                 togglePurchaseModal(false);
 
                 try {
-                    const res = await fetch('http://localhost:3000/api/apis/purchase', {
+                    const res = await fetch(API_BASE_URL + '/api/apis/purchase', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ userId: currentUser.id, apiId })
@@ -1042,7 +982,7 @@
                 if (!confirm("Are you sure you want to remove this API from your services?")) return;
 
                 try {
-                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/apis/${apiId}/remove`, {
+                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/apis/${apiId}/remove`, {
                         method: 'POST'
                     });
                     const data = await res.json();
@@ -1411,7 +1351,7 @@ Thank you for using API Hub.
                 if (!confirm("Remove this API exactly for this specific user?")) return;
 
                 try {
-                    const res = await fetch(`http://localhost:3000/api/user/${userId}/apis/${apiId}/remove`, {
+                    const res = await fetch(API_BASE_URL + `/api/user/${userId}/apis/${apiId}/remove`, {
                         method: 'POST'
                     });
                     const data = await res.json();
@@ -1662,29 +1602,6 @@ Thank you for using API Hub.
         </div>
     </div>
 
-    <!-- =========================
-         OTP VIEW (NEW)
-         ========================= -->
-    <div id="otp-view" class="login-container" style="display: none;">
-        <div class="login-card">
-            <div class="icon">🛡️</div>
-            <h2>Verify Identity</h2>
-            <p id="otp-message">We've sent a 6-digit code to your email and phone.</p>
-
-            <form id="otp-form">
-                <label>Verification Code</label>
-                <input type="text" id="otp-input" placeholder="000000" maxlength="6"
-                    style="text-align: center; letter-spacing: 8px; font-size: 24px; font-weight: bold;" required>
-
-                <button type="submit">Verify & Login</button>
-            </form>
-
-            <div class="links">
-                <p>Didn't receive code? <a href="#" id="resend-otp">Resend Code</a></p>
-                <p><a href="#" id="back-to-login">Back to Login</a></p>
-            </div>
-        </div>
-    </div>
 
     <!-- =========================
           FORGOT PASSWORD VIEW
@@ -1693,13 +1610,13 @@ Thank you for using API Hub.
         <div class="login-card">
             <div class="icon">🔑</div>
             <h2>Forgot Password</h2>
-            <p>Enter your email to receive a reset code.</p>
+            <p>Enter your email to reset your password.</p>
 
             <form id="forgot-pass-form">
                 <label>Email Address</label>
                 <input type="email" id="forgot-pass-email" placeholder="name@company.com" required>
 
-                <button type="submit">Send Reset Code</button>
+                <button type="submit">Verify Email</button>
             </form>
 
             <div class="links">
@@ -1715,12 +1632,9 @@ Thank you for using API Hub.
         <div class="login-card">
             <div class="icon">🔓</div>
             <h2>Reset Password</h2>
-            <p>Enter the code and your new password.</p>
+            <p>Enter your new password.</p>
 
             <form id="reset-pass-form">
-                <label>Verification Code</label>
-                <input type="text" id="reset-pass-otp" placeholder="000000" maxlength="6"
-                    style="text-align: center; letter-spacing: 8px; font-size: 24px; font-weight: bold;" required>
 
                 <label>New Password</label>
                 <input type="password" id="reset-new-pass" placeholder="••••••••" required>

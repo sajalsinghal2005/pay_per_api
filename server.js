@@ -36,11 +36,6 @@ const dbAll = (sql, params = []) =>
     });
 
 /* =========================
-   OTP STATE (In-memory)
-========================= */
-const pendingOtps = {}; // { userId: { otp: "123456", expires: timestamp, userData: {} } }
-
-/* =========================
    AUTH
 ========================= */
 
@@ -80,87 +75,14 @@ app.post('/api/auth/login', async (req, res) => {
         if (user.status === 'suspended')
             return res.json({ success: false, message: 'Account Suspended' });
 
-        // Generate OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        pendingOtps[user.id] = {
-            otp,
-            expires: Date.now() + 5 * 60000, // 5 minutes
-            user
-        };
-
-        console.log(`[OTP DEBUG] User ${user.email} OTP: ${otp}`);
-
+        // OTP system removed - login directly
         res.json({
             success: true,
-            requireOtp: true,
-            userId: user.id,
-            message: 'OTP sent to your registered email and phone' // Mock message
+            requireOtp: false,
+            user: user,
+            message: 'Login successful'
         });
 
-    } catch (err) {
-        res.json({ success: false, message: err.message });
-    }
-});
-
-app.post('/api/auth/verify-otp', async (req, res) => {
-    const { userId, otp } = req.body;
-
-    try {
-        const pending = pendingOtps[userId];
-
-        if (!pending) {
-            return res.json({ success: false, message: 'OTP expired or not requested' });
-        }
-
-        if (pending.expires < Date.now()) {
-            delete pendingOtps[userId];
-            return res.json({ success: false, message: 'OTP expired' });
-        }
-
-        if (pending.otp !== otp) {
-            return res.json({ success: false, message: 'Invalid OTP code' });
-        }
-
-        const user = pending.user;
-        delete pendingOtps[userId]; // Clear used OTP
-
-        res.json({ success: true, user });
-
-    } catch (err) {
-        res.json({ success: false, message: err.message });
-    }
-});
-
-// Resend OTP - generate a new code if the user requests it (or extend existing)
-app.post('/api/auth/resend-otp', async (req, res) => {
-    const { userId } = req.body;
-    try {
-        if (!userId) {
-            return res.json({ success: false, message: 'Missing userId' });
-        }
-
-        // try to reuse the user object stored in pendingOtps or fetch from DB
-        let user;
-        if (pendingOtps[userId] && pendingOtps[userId].user) {
-            user = pendingOtps[userId].user;
-        } else {
-            user = await dbGet('SELECT * FROM users WHERE id=?', [userId]);
-        }
-
-        if (!user) {
-            return res.json({ success: false, message: 'User not found' });
-        }
-
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        pendingOtps[userId] = {
-            otp,
-            expires: Date.now() + 5 * 60000,
-            user,
-            type: pendingOtps[userId]?.type || 'login'
-        };
-
-        console.log(`[OTP DEBUG] Resent OTP for ${user.email}: ${otp} (Type: ${pendingOtps[userId].type})`);
-        res.json({ success: true, message: 'OTP resent to your registered email and phone' });
     } catch (err) {
         res.json({ success: false, message: err.message });
     }
@@ -176,21 +98,11 @@ app.post('/api/auth/forgot-password', async (req, res) => {
             return res.json({ success: false, message: 'No account found with this email' });
         }
 
-        // Generate OTP for password reset
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        pendingOtps[user.id] = {
-            otp,
-            expires: Date.now() + 10 * 60000, // 10 minutes for reset
-            user,
-            type: 'password-reset'
-        };
-
-        console.log(`[PASSWORD RESET DEBUG] User ${user.email} OTP: ${otp}`);
-
+        // OTP system removed - proceed directly to reset
         res.json({
             success: true,
             userId: user.id,
-            message: 'OTP sent to your registered email'
+            message: 'User verified. Please enter your new password.'
         });
 
     } catch (err) {
@@ -199,28 +111,16 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 });
 
 app.post('/api/auth/reset-password', async (req, res) => {
-    const { userId, otp, newPassword } = req.body;
+    const { userId, newPassword } = req.body;
 
     try {
-        const pending = pendingOtps[userId];
-
-        if (!pending || pending.type !== 'password-reset') {
-            return res.json({ success: false, message: 'Invalid or expired reset request' });
+        const user = await dbGet("SELECT * FROM users WHERE id=?", [userId]);
+        if (!user) {
+            return res.json({ success: false, message: 'User not found' });
         }
 
-        if (pending.expires < Date.now()) {
-            delete pendingOtps[userId];
-            return res.json({ success: false, message: 'OTP expired' });
-        }
-
-        if (pending.otp !== otp) {
-            return res.json({ success: false, message: 'Invalid OTP code' });
-        }
-
-        // Update password in DB
+        // Update password in DB (OTP check removed)
         await dbRun("UPDATE users SET password=? WHERE id=?", [newPassword, userId]);
-
-        delete pendingOtps[userId]; // Clear used OTP
 
         res.json({ success: true, message: 'Password updated successfully' });
 
@@ -689,6 +589,8 @@ app.get('/api/admin/billing', async (req, res) => {
    START SERVER
 ========================= */
 
-app.listen(3000, () =>
-    console.log("Server running on http://localhost:3000")
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () =>
+    console.log(`Server running on port ${PORT}`)
 );
