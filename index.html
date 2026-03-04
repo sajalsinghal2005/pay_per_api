@@ -9,7 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const API_BASE_URL = 'http://localhost:3000';
+            const API_BASE_URL = 'http://localhost:3001';
 
             // Global Chart Instances to prevent reuse errors
             let userTrafficChartInstance = null;
@@ -326,6 +326,7 @@
             const toggleLoginBtn = document.getElementById('go-to-login');
             const backToLoginForgotBtn = document.getElementById('back-to-login-forgot');
             const backToLoginResetBtn = document.getElementById('back-to-login-reset');
+            const goToForgotPassBtn = document.getElementById('go-to-forgot-pass');
 
             // ============================
             // 3. AUTHENTICATION LOGIC
@@ -352,7 +353,7 @@
             if (backToLoginBtn) {
                 backToLoginBtn.addEventListener('click', (e) => {
                     e.preventDefault();
-                    // otpView is removed, so this shouldn't be needed, but just in case
+                    // otpView is removed, so this shouldn't be needed
                     loginView.style.display = 'flex';
                 });
             }
@@ -456,8 +457,8 @@
             });
 
             // Handle Login
-            let loginEmail = ''; // Store for OTP verification
-            let loginUserId = null; // Store for OTP verification
+            let loginEmail = '';
+            let loginUserId = null;
             let resetUserId = null; // Store for password reset
 
             // Handle Forgot Password Request
@@ -1001,7 +1002,7 @@
 
             async function loadUserBilling() {
                 const res = await fetch(
-                    `http://localhost:3000/api/user/${currentUser.id}/billing`
+                    API_BASE_URL + `/api/user/${currentUser.id}/billing`
                 );
                 const transactions = await res.json();
 
@@ -1064,7 +1065,7 @@ Thank you for using API Hub.
 
             async function loadAdminDashboard() {
                 try {
-                    const res = await fetch('http://localhost:3000/api/admin/stats');
+                    const res = await fetch(API_BASE_URL + '/api/admin/stats');
                     const data = await res.json();
 
                     // Revenue
@@ -1117,7 +1118,7 @@ Thank you for using API Hub.
                     });
 
                     // 4. Load Global Settings
-                    const configRes = await fetch('http://localhost:3000/api/admin/config');
+                    const configRes = await fetch(API_BASE_URL + '/api/admin/config');
                     const configData = await configRes.json();
                     if (configData.success && configData.config) {
                         document.getElementById('admin-rate-limit').value = configData.config.userRateLimit;
@@ -1126,7 +1127,7 @@ Thank you for using API Hub.
                     }
 
                     // 5. Load APIs for Marketplace Management
-                    const apisRes = await fetch('http://localhost:3000/api/admin/apis/all');
+                    const apisRes = await fetch(API_BASE_URL + '/api/admin/apis/all');
                     const apisData = await apisRes.json();
                     const apisContainer = document.getElementById('admin-api-list');
                     apisContainer.innerHTML = '';
@@ -1157,7 +1158,7 @@ Thank you for using API Hub.
 
             async function loadAdminTransactions() {
                 try {
-                    const res = await fetch('http://localhost:3000/api/admin/billing');
+                    const res = await fetch(API_BASE_URL + '/api/admin/billing');
                     const data = await res.json();
 
                     if (!data.success) return;
@@ -1306,7 +1307,7 @@ Thank you for using API Hub.
             // Admin Logic for Viewing and Removing Specific User APIs
             window.viewUserApis = async (userId, userName) => {
                 try {
-                    const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/apis`);
+                    const res = await fetch(API_BASE_URL + `/api/admin/users/${userId}/apis`);
                     const data = await res.json();
 
                     if (!data.success) {
@@ -1672,7 +1673,7 @@ Thank you for using API Hub.
                     </div>
                 </div>
 
-                <label>Contact Number (for OTP)</label>
+                <label>Contact Number</label>
                 <input type="text" id="reg-contact" placeholder="+91 9876543210" required autocomplete="tel">
 
                 <label>Email Address</label>
