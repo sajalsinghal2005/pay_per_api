@@ -1,0 +1,2487 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>API Hub</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Global Chart Instances to prevent reuse errors
+            let userTrafficChartInstance = null;
+            let userUsageWeekChartInstance = null;
+            let userResponseTimeChartInstance = null;
+            let userErrorDistChartInstance = null;
+
+            // --- UI Helper Functions ---
+            window.showToast = (message, type = 'success') => {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                toast.className = `toast ${type}`;
+                toast.innerHTML = `
+                    <span style="font-size: 18px;">${type === 'success' ? '✅' : '❌'}</span>
+                    <span style="font-weight: 500;">${message}</span>
+                `;
+                container.appendChild(toast);
+
+                // Auto remove
+                setTimeout(() => {
+                    toast.classList.add('fade-out');
+                    setTimeout(() => toast.remove(), 300);
+                }, 4000);
+
+                toast.onclick = () => toast.remove();
+            };
+
+            window.togglePurchaseModal = (show, apiData = null) => {
+                const modal = document.getElementById('purchase-confirm-modal');
+                if (show && apiData) {
+                    document.getElementById('modal-api-name').textContent = apiData.name;
+                    document.getElementById('modal-api-price').textContent = `₹${apiData.price}`;
+                    document.getElementById('modal-api-img').src = apiData.image || 'https://via.placeholder.com/300';
+                    window.pendingPurchaseApiId = apiData.id;
+                    modal.classList.add('active');
+                } else {
+                    modal.classList.remove('active');
+                }
+            };
+
+
+            window.suspendUser = async (id) => {
+                await fetch('/api/admin/suspend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: id })
+                });
+                loadAdminDashboard();
+            };
+
+            window.activateUser = async (id) => {
+                await fetch('/api/admin/activate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: id })
+                });
+                loadAdminDashboard();
+            };
+
+            window.mockAction = (actionName) => {
+                alert(actionName + " functionality will be implemented in the next major release!");
+            };
+
+            // Admin Functions for Global Config & APIs
+            window.applyGlobalConfig = async () => {
+                const limit = document.getElementById('admin-rate-limit').value;
+                const cap = document.getElementById('admin-traffic-cap').value;
+                const mode = document.getElementById('admin-maintenance-mode').checked;
+
+                try {
+                    const res = await fetch('/api/admin/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userRateLimit: limit, globalTrafficCap: cap, maintenanceMode: mode })
+                    });
+                    const data = await res.json();
+                    if (data.success) showToast("Configuration Saved Successfully!");
+                    else showToast("Failed to save config: " + data.message, "error");
+                } catch (err) {
+                    showToast("Error saving configuration.", "error");
+                }
+            };
+
+            window.addNewApi = async () => {
+                const name = prompt("Enter API Name:");
+                if (!name) return;
+                const provider = prompt("Enter Provider:", "DefaultProvider");
+                const description = prompt("Enter Description:");
+                const category = prompt("Enter Category (e.g., Data, Mapping):", "General");
+                const price = prompt("Enter Price (credits):", "100");
+
+                try {
+                    const res = await fetch('/api/admin/apis', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, provider, description, category, price: parseInt(price) || 0, image: 'https://via.placeholder.com/300' })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast("API Added!");
+                        loadAdminDashboard(); // Refresh lists
+                    } else {
+                        showToast("Failed: " + data.message, "error");
+                    }
+                } catch (err) {
+                    showToast("Error adding API.", "error");
+                }
+            };
+
+            window.editApi = async (id, oldName, oldPrice) => {
+                const name = prompt("Edit API Name:", oldName);
+                if (!name) return;
+                const price = prompt("Edit Price (credits):", oldPrice);
+
+                try {
+                    // Quick PUT, in reality you'd prompt all fields or use a modal.
+                    const res = await fetch(`/api/admin/apis/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, provider: 'Updated', description: 'Updated Description', category: 'Updated', price: parseInt(price) || 0, image: 'https://via.placeholder.com/300' })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast("API Updated!");
+                        loadAdminDashboard();
+                    } else {
+                        showToast("Failed: " + data.message, "error");
+                    }
+                } catch (err) {
+                    showToast("Error updating API.", "error");
+                }
+            }
+
+            window.toggleApiStatus = async (id, currentStatus) => {
+                const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
+                try {
+                    const res = await fetch(`/api/admin/apis/${id}/status`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: newStatus })
+                    });
+                    if ((await res.json()).success) {
+                        showToast("API Status Toggled!");
+                        loadAdminDashboard();
+                    }
+                } catch (err) {
+                    showToast("Error changing API status.", "error");
+                }
+            }
+
+            // --- User Settings Logic ---
+            window.loadUserSettings = async () => {
+                if (!currentUser) return;
+                try {
+                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/settings`);
+                    const data = await res.json();
+                    if (data.success) {
+                        const s = data.settings;
+                        document.getElementById('set-fullname').value = `${s.firstName || ''} ${s.lastName || ''}`.trim();
+                        document.getElementById('set-email').value = s.email || '';
+                        document.getElementById('set-org').value = s.organization || '';
+                        document.getElementById('set-apiKey').textContent = s.apiKey || 'No key generated';
+                        document.getElementById('set-autoRecharge').classList.toggle('active', s.autoRecharge === 1);
+                        document.getElementById('set-lowCredit').classList.toggle('active', s.lowCreditNotifications === 1);
+                        document.getElementById('set-timeout').value = s.sessionTimeout || 30;
+                        document.getElementById('set-2fa').classList.toggle('active', s.twoFactorAuth === 1);
+
+                        // Mask API key by default
+                        window.isApiKeyVisible = false;
+                        document.getElementById('set-apiKey').textContent = '•••••••••••••••••••••';
+                    }
+                } catch (err) {
+                    console.error("Error loading settings:", err);
+                }
+            };
+
+            window.saveAccountChanges = async () => {
+                const fullName = document.getElementById('set-fullname').value.trim();
+                const email = document.getElementById('set-email').value;
+                const organization = document.getElementById('set-org').value;
+                const password = document.getElementById('set-pass').value;
+
+                let firstName = fullName, lastName = '';
+                if (fullName.includes(' ')) {
+                    const parts = fullName.split(' ');
+                    firstName = parts[0];
+                    lastName = parts.slice(1).join(' ');
+                }
+
+                try {
+                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/settings`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ firstName, lastName, email, organization, password })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast("Account changes saved!");
+                        document.getElementById('set-pass').value = ''; // Clear password field
+                    } else {
+                        showToast("Failed: " + data.message, "error");
+                    }
+                } catch (err) {
+                    showToast("Error saving account changes.", "error");
+                }
+            };
+
+            window.updatePreferences = async () => {
+                const autoRecharge = document.getElementById('set-autoRecharge').classList.contains('active');
+                const lowCreditNotifications = document.getElementById('set-lowCredit').classList.contains('active');
+                const sessionTimeout = document.getElementById('set-timeout').value;
+                const twoFactorAuth = document.getElementById('set-2fa').classList.contains('active');
+
+                // Get current text values to avoid overwriting with empty
+                const fullName = document.getElementById('set-fullname').value.trim();
+                const email = document.getElementById('set-email').value;
+                const organization = document.getElementById('set-org').value;
+
+                let firstName = fullName, lastName = '';
+                if (fullName.includes(' ')) {
+                    const parts = fullName.split(' ');
+                    firstName = parts[0];
+                    lastName = parts.slice(1).join(' ');
+                }
+
+                try {
+                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/settings`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ firstName, lastName, email, organization, autoRecharge, lowCreditNotifications, sessionTimeout, twoFactorAuth })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast("Preferences updated!");
+                    } else {
+                        showToast("Failed: " + data.message, "error");
+                    }
+                } catch (err) {
+                    showToast("Error updating preferences.", "error");
+                }
+            };
+
+            window.togglePreference = (id) => {
+                document.getElementById(id).classList.toggle('active');
+            };
+
+            window.toggleApiKeyVisibility = () => {
+                const el = document.getElementById('set-apiKey');
+                const btn = document.getElementById('toggle-key-btn');
+                if (window.isApiKeyVisible) {
+                    el.textContent = '•••••••••••••••••••••';
+                    btn.textContent = 'Show';
+                } else {
+                    // Fetch real key if not cached or just use a state
+                    fetch(`http://localhost:3000/api/user/${currentUser.id}/settings`)
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.success) {
+                                el.textContent = data.settings.apiKey;
+                            }
+                        });
+                    btn.textContent = 'Hide';
+                }
+                window.isApiKeyVisible = !window.isApiKeyVisible;
+            };
+
+            window.copyApiKey = () => {
+                fetch(`http://localhost:3000/api/user/${currentUser.id}/settings`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            navigator.clipboard.writeText(data.settings.apiKey);
+                            showToast("API Key copied to clipboard!");
+                        }
+                    });
+            };
+
+            window.regenerateApiKey = async () => {
+                if (!confirm("Are you sure? Your old API key will stop working immediately.")) return;
+                try {
+                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/apiKey/regenerate`, { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast("New API key generated!");
+                        document.getElementById('set-apiKey').textContent = data.apiKey;
+                        window.isApiKeyVisible = true;
+                        document.getElementById('toggle-key-btn').textContent = 'Hide';
+                    }
+                } catch (err) {
+                    showToast("Error regenerating API key.", "error");
+                }
+            };
+
+            // ============================
+            // 1. STATE MANAGEMENT
+            // ============================
+            let currentUser = null;
+
+            // ============================
+            // 2. DOM ELEMENTS
+            // ============================
+            const loginView = document.getElementById('login-view');
+            const signupView = document.getElementById('signup-view');
+            const otpView = document.getElementById('otp-view');
+            const forgotPassView = document.getElementById('forgot-pass-view');
+            const resetPassView = document.getElementById('reset-pass-view');
+            const appView = document.getElementById('app-view');
+
+            const loginForm = document.getElementById('login-form');
+            const signupForm = document.getElementById('signup-form');
+            const otpForm = document.getElementById('otp-form');
+            const forgotPassForm = document.getElementById('forgot-pass-form');
+            const resetPassForm = document.getElementById('reset-pass-form');
+
+            const toggleSignupBtn = document.getElementById('go-to-signup');
+            const toggleLoginBtn = document.getElementById('go-to-login');
+            const backToLoginBtn = document.getElementById('back-to-login');
+            const goToForgotPassBtn = document.getElementById('go-to-forgot-pass');
+            const backToLoginForgotBtn = document.getElementById('back-to-login-forgot');
+            const backToLoginResetBtn = document.getElementById('back-to-login-reset');
+
+            // ============================
+            // 3. AUTHENTICATION LOGIC
+            // ============================
+
+            toggleSignupBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                loginView.style.display = 'none';
+                signupView.style.display = 'flex';
+            });
+
+            toggleLoginBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                signupView.style.display = 'none';
+                loginView.style.display = 'flex';
+            });
+
+            backToLoginBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                otpView.style.display = 'none';
+                loginView.style.display = 'flex';
+            });
+
+            goToForgotPassBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                loginView.style.display = 'none';
+                forgotPassView.style.display = 'flex';
+            });
+
+            backToLoginForgotBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                forgotPassView.style.display = 'none';
+                loginView.style.display = 'flex';
+            });
+
+            backToLoginResetBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                resetPassView.style.display = 'none';
+                loginView.style.display = 'flex';
+            });
+
+            // Password Strength Real-time Feedback
+            const regPass = document.getElementById('reg-pass');
+            const strengthBar = document.getElementById('strength-bar');
+            const strengthText = document.getElementById('strength-text');
+
+            regPass.addEventListener('input', () => {
+                const pass = regPass.value;
+                let strength = 0;
+                if (pass.length === 0) {
+                    strengthBar.style.width = '0%';
+                    strengthText.textContent = 'Use 8+ chars, mixed case & symbols';
+                    return;
+                }
+                if (pass.length >= 8) strength += 25;
+                if (/[A-Z]/.test(pass)) strength += 25;
+                if (/[0-9]/.test(pass)) strength += 25;
+                if (/[^A-Za-z0-9]/.test(pass)) strength += 25;
+
+                strengthBar.style.width = strength + '%';
+                if (strength < 50) {
+                    strengthBar.style.backgroundColor = '#ef4444';
+                    strengthText.textContent = 'Weak - Keep going...';
+                    strengthText.style.color = '#ef4444';
+                } else if (strength < 100) {
+                    strengthBar.style.backgroundColor = '#f59e0b';
+                    strengthText.textContent = 'Good - Add symbols or caps';
+                    strengthText.style.color = '#f59e0b';
+                } else {
+                    strengthBar.style.backgroundColor = '#10b981';
+                    strengthText.textContent = 'Strong - Perfect!';
+                    strengthText.style.color = '#10b981';
+                }
+            });
+
+            // Handle Signup
+            signupForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const fname = document.getElementById('reg-fname').value;
+                const lname = document.getElementById('reg-lname').value;
+                const email = document.getElementById('reg-email').value;
+                const contact = document.getElementById('reg-contact').value;
+                const pass = document.getElementById('reg-pass').value;
+                const confirmPass = document.getElementById('reg-confirm-pass').value;
+
+                if (pass !== confirmPass) {
+                    showToast("Passwords do not match!", "error");
+                    return;
+                }
+
+                // Strength check
+                if (pass.length < 8 || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) {
+                    showToast("Password must be at least 8 characters, include an uppercase letter and a number.", "error");
+                    return;
+                }
+
+                try {
+                    const res = await fetch('http://localhost:3000/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ firstName: fname, lastName: lname, email, contact, password: pass })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        showToast("Registration Successful! Please Login.");
+                        signupForm.reset();
+                        strengthBar.style.width = '0%';
+                        signupView.style.display = 'none';
+                        loginView.style.display = 'flex';
+                    } else {
+                        // More descriptive error handling
+                        if (data.message.includes('already registered')) {
+                            showToast("This email is already registered. Redirecting to login...", "error");
+                            signupForm.reset();
+                            signupView.style.display = 'none';
+                            loginView.style.display = 'flex';
+                        } else {
+                            showToast("Registration Failed: " + data.message, "error");
+                        }
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast("An error occurred during registration.", "error");
+                }
+            });
+
+            // Handle Login
+            let loginEmail = ''; // Store for OTP verification
+            let loginUserId = null; // Store for OTP verification
+            let resetUserId = null; // Store for password reset
+
+            // Handle Forgot Password Request
+            forgotPassForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('forgot-pass-email').value;
+
+                try {
+                    const res = await fetch('http://localhost:3000/api/auth/forgot-password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        showToast(data.message);
+                        resetUserId = data.userId;
+                        forgotPassView.style.display = 'none';
+                        resetPassView.style.display = 'flex';
+                    } else {
+                        showToast(data.message, "error");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast("An error occurred.", "error");
+                }
+            });
+
+            // Handle Reset Password Submission
+            resetPassForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const otp = document.getElementById('reset-pass-otp').value;
+                const newPass = document.getElementById('reset-new-pass').value;
+                const confirmNewPass = document.getElementById('reset-confirm-pass').value;
+
+                if (newPass !== confirmNewPass) {
+                    showToast("Passwords do not match!", "error");
+                    return;
+                }
+
+                // Strength check
+                if (newPass.length < 8 || !/[A-Z]/.test(newPass) || !/[0-9]/.test(newPass)) {
+                    showToast("Password must be at least 8 characters, include an uppercase letter and a number.", "error");
+                    return;
+                }
+
+                try {
+                    const res = await fetch('http://localhost:3000/api/auth/reset-password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: resetUserId, otp, newPassword: newPass })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        showToast(data.message);
+                        resetPassForm.reset();
+                        resetPassView.style.display = 'none';
+                        loginView.style.display = 'flex';
+                    } else {
+                        showToast(data.message, "error");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast("An error occurred during password reset.", "error");
+                }
+            });
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                loginEmail = document.getElementById('login-email').value;
+                const pass = document.getElementById('login-pass').value;
+
+                try {
+                    const res = await fetch('http://localhost:3000/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: loginEmail, password: pass })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        if (data.requireOtp) {
+                            // Show OTP Screen
+                            loginUserId = data.userId; // Save userId
+                            loginView.style.display = 'none';
+                            otpView.style.display = 'flex';
+                            document.getElementById('otp-message').textContent = data.message;
+                        } else {
+                            currentUser = data.user;
+                            loginSuccess();
+                        }
+                    } else {
+                        showToast("Login Failed: " + data.message, "error");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast("An error occurred during login.", "error");
+                }
+            });
+
+            // Handle OTP Verification
+            otpForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const otp = document.getElementById('otp-input').value;
+
+                try {
+                    const res = await fetch('http://localhost:3000/api/auth/verify-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: loginUserId, otp })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        currentUser = data.user;
+                        otpView.style.display = 'none';
+                        loginSuccess();
+                    } else {
+                        showToast("Verification Failed: " + data.message, "error");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast("An error occurred during verification.", "error");
+                }
+            });
+
+            // Resend OTP handler
+            document.getElementById('resend-otp').addEventListener('click', async (e) => {
+                e.preventDefault();
+                if (!loginUserId) {
+                    showToast('Cannot resend OTP: no user context', 'error');
+                    return;
+                }
+                try {
+                    const res = await fetch('http://localhost:3000/api/auth/resend-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: loginUserId })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast(data.message);
+                        document.getElementById('otp-message').textContent = data.message;
+                    } else {
+                        showToast('Resend Failed: ' + data.message, 'error');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast('An error occurred during OTP resend.', 'error');
+                }
+            });
+
+            function loginSuccess() {
+                // Hide Auth Views
+                loginView.style.display = 'none';
+                signupView.style.display = 'none';
+                appView.style.display = 'flex';
+
+                // Initial Data Fetch
+                if (currentUser.role === 'admin') {
+                    loadAdminDashboard();
+                    loadAdminTransactions(); // For billing section
+                } else {
+                    loadUserDashboard();
+                    loadMarketplace();
+                    loadUserBilling();
+                }
+
+                // Configure UI based on Role
+                configureInterface(currentUser.role);
+            }
+
+            // ============================
+            // 4. DATA FETCHING & RENDERING
+            // ============================
+
+            async function loadUserDashboard() {
+                try {
+                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/dashboard`);
+                    const data = await res.json();
+
+                    // Update Credits (Box and Sidebar)
+                    const balDisplay = document.getElementById('user-balance-display');
+                    const sidebarBal = document.getElementById('sidebar-balance');
+                    if (balDisplay) balDisplay.textContent = `₹ ${data.credits.toLocaleString()}`;
+                    if (sidebarBal) sidebarBal.textContent = `Wallet: ₹ ${data.credits.toLocaleString()}`;
+
+                    // Update Active APIs Count
+                    document.querySelector('#user-dashboard-section .overview .box:nth-child(2) h2').textContent = data.activeApis.length;
+
+                    // Update API Key
+                    const keyDisplay = document.querySelector('#user-dashboard-section code');
+                    if (keyDisplay) keyDisplay.textContent = data.apiKey;
+
+                    // Render Active Services List
+                    const servicesContainer = document.querySelector('#user-dashboard-section .panel.large .flex-column');
+                    // Note: We might need to clear existing static content or targeting correct container. 
+                    // Since existing HTML structure is specific, let's target the "My Active Services" list container more precisely.
+                    // Actually, let's just replace the relevant part in HTML or do crude selection:
+                    const serviceListContainer = document.querySelector('#user-dashboard-section .panel.large > div:nth-of-type(2)');
+                    if (serviceListContainer) {
+                        serviceListContainer.innerHTML = ''; // Clear static
+                        data.activeApis.forEach(api => {
+                            const div = document.createElement('div');
+                            div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9; margin-bottom: 10px;";
+                            div.innerHTML = `
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="width: 32px; height: 32px; background: #e0e7ff; color: #4338ca; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px;">⚡</div>
+                                    <div>
+                                        <div style="font-weight: 600; font-size: 14px;">${api.name}</div>
+                                        <div style="font-size: 12px; color: #64748b;">${api.category}</div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="status-badge paid">Active</span>
+                                    <button class="small danger" style="padding: 2px 6px; margin: 0; font-size: 11px;" onclick="removeApi(${api.apiId})">Remove</button>
+                                </div>
+                            `;
+                            serviceListContainer.appendChild(div);
+                        });
+                    }
+
+                    // Initialize charts when pages are loaded
+                    // let userTrafficChartInstance = null; // Moved to global scope above
+                    // let userUsageWeekChartInstance = null; // Moved to global scope above
+
+                    // function loadUserDashboard() { // Already async, just adding chart logic
+                    // document.getElementById('welcome-name').textContent = getCurrentUser()?.name || 'User'; // getCurrentUser() not defined, skipping
+
+                    const trafficCtx = document.getElementById('trafficChart');
+                    if (trafficCtx) {
+                        if (userTrafficChartInstance) {
+                            userTrafficChartInstance.destroy();
+                        }
+
+                        // Fetch usage data for the chart
+                        const usageRes = await fetch(`http://localhost:3000/api/user/${currentUser.id}/usage`);
+                        const usageData = await usageRes.json();
+
+                        // Collapse datasets into a single daily total for the dashboard chart
+                        const dailyTotals = [0, 0, 0, 0, 0, 0, 0];
+                        if (usageData.success && usageData.datasets) {
+                            usageData.datasets.forEach(ds => {
+                                ds.data.forEach((val, idx) => {
+                                    if (idx < 7) dailyTotals[idx] += val;
+                                });
+                            });
+                        }
+
+                        userTrafficChartInstance = new Chart(trafficCtx.getContext('2d'), {
+                            type: 'bar',
+                            data: {
+                                labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                                datasets: [{
+                                    label: 'API Requests',
+                                    data: dailyTotals,
+                                    backgroundColor: '#4338ca',
+                                    borderRadius: 6
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { display: false } },
+                                scales: {
+                                    y: {
+                                        beginAtZero: true,
+                                        grid: { color: '#f1f5f9' },
+                                        ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' }
+                                    },
+                                    x: {
+                                        grid: { display: false },
+                                        ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' }
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                } catch (err) {
+                    console.error("Dashboard load error", err);
+                }
+            }
+
+            // --- Top-up Modal Logic ---
+            window.showTopupModal = () => {
+                document.getElementById('topup-modal').style.display = 'flex';
+            };
+
+            window.hideTopupModal = () => {
+                document.getElementById('topup-modal').style.display = 'none';
+            };
+
+            window.setTopupAmount = (amt) => {
+                document.getElementById('custom-topup-amount').value = amt;
+                document.querySelectorAll('.amount-pill').forEach(btn => {
+                    const btnAmt = parseInt(btn.textContent.replace('₹ ', '').replace(',', ''));
+                    btn.classList.toggle('active', btnAmt === amt);
+                });
+            };
+
+            window.selectPaymentMethod = (el, method) => {
+                document.querySelectorAll('.payment-method').forEach(m => m.classList.remove('selected'));
+                el.classList.add('selected');
+                window.selectedPaymentMethod = method;
+            };
+
+            window.processTopup = async () => {
+                const amount = parseInt(document.getElementById('custom-topup-amount').value);
+                if (!amount || amount <= 0) return alert("Please enter a valid amount");
+
+                const btn = document.getElementById('process-topup-btn');
+                const originalText = btn.textContent;
+                btn.textContent = "Processing Payment...";
+                btn.disabled = true;
+
+                try {
+                    // Simulate payment gateway delay
+                    await new Promise(r => setTimeout(r, 1500));
+
+                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/topup`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ amount })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        showToast(data.message);
+                        window.hideTopupModal();
+                        loadUserDashboard();
+                        loadUserBilling();
+                        if (currentUser.role === 'admin') {
+                            loadAdminDashboard();
+                            loadAdminTransactions();
+                        }
+                    } else {
+                        showToast("Top-up Failed: " + data.message, "error");
+                    }
+                } catch (err) {
+                    showToast("Error processing top-up", "error");
+                } finally {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }
+            };
+
+            function loadUserUsagePage() {
+                const ctx = document.getElementById('userUsageWeekChart');
+                const ctxResponse = document.getElementById('userResponseTimeChart');
+                const ctxError = document.getElementById('userErrorDistChart');
+
+                if (!ctx || !ctxResponse || !ctxError) return;
+
+                // 1. Initialize Average Response Time Chart (Line)
+                if (window.userResponseTimeChartInstance) {
+                    window.userResponseTimeChartInstance.destroy();
+                }
+                window.userResponseTimeChartInstance = new Chart(ctxResponse, {
+                    type: 'line',
+                    data: {
+                        labels: ['10:00', '10:05', '10:10', '10:15', '10:20', '10:25', '10:30'],
+                        datasets: [{
+                            label: 'Latency (ms)',
+                            data: [180, 210, 190, 310, 205, 198, 202],
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 5
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: '#1e293b',
+                                titleFont: { family: 'Inter' },
+                                bodyFont: { family: 'Inter', weight: 'bold' }
+                            }
+                        },
+                        scales: {
+                            y: { grid: { color: '#f1f5f9' }, min: 100, ticks: { font: { family: 'Inter' }, color: '#64748b' } },
+                            x: { grid: { display: false }, ticks: { font: { family: 'Inter' }, color: '#64748b' } }
+                        }
+                    }
+                });
+
+                // 2. Initialize Error Distribution Chart (Doughnut)
+                if (window.userErrorDistChartInstance) {
+                    window.userErrorDistChartInstance.destroy();
+                }
+                window.userErrorDistChartInstance = new Chart(ctxError, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['404 Not Found', '429 Rate Limit', '500 Server Error', '401 Unauthorized'],
+                        datasets: [{
+                            data: [45, 30, 15, 10],
+                            backgroundColor: ['#f87171', '#fbbf24', '#f43f5e', '#a78bfa'],
+                            borderWidth: 0,
+                            hoverOffset: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '70%',
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: { font: { family: 'Inter', size: 11 }, usePointStyle: true, boxWidth: 8 }
+                            },
+                            tooltip: {
+                                backgroundColor: '#1e293b',
+                                titleFont: { family: 'Inter' },
+                                bodyFont: { family: 'Inter', weight: 'bold' }
+                            }
+                        }
+                    }
+                });
+
+                // 3. Initialize Usage Breakdown Chart (Stacked Bar)
+                fetch(`http://localhost:3000/api/user/${currentUser.id}/usage`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success && data.datasets.length > 0) {
+                            if (window.userUsageWeekChartInstance) {
+                                window.userUsageWeekChartInstance.destroy();
+                            }
+
+                            window.userUsageWeekChartInstance = new Chart(ctx, {
+                                type: 'bar',
+                                data: {
+                                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                                    datasets: data.datasets
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        legend: {
+                                            position: 'top',
+                                            labels: { font: { family: 'Inter' } }
+                                        },
+                                        tooltip: {
+                                            backgroundColor: '#1e293b',
+                                            titleFont: { family: 'Inter', size: 13 },
+                                            bodyFont: { family: 'Inter', size: 14, weight: 'bold' },
+                                            padding: 12,
+                                            displayColors: true,
+                                            callbacks: {
+                                                label: function (context) {
+                                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' reqs';
+                                                }
+                                            }
+                                        }
+                                    },
+                                    scales: {
+                                        y: {
+                                            beginAtZero: true,
+                                            stacked: true,
+                                            grid: { color: '#f1f5f9', drawBorder: false },
+                                            ticks: {
+                                                font: { family: 'Inter', size: 12 },
+                                                color: '#64748b',
+                                                callback: function (value) {
+                                                    if (value >= 1000) return (value / 1000) + 'k';
+                                                    return value;
+                                                }
+                                            }
+                                        },
+                                        x: {
+                                            stacked: true,
+                                            grid: { display: false },
+                                            ticks: { font: { family: 'Inter', size: 12 }, color: '#64748b' }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
+                        // Populate summary metrics
+                        if (data.totalRequests) document.getElementById('user-total-requests').textContent = data.totalRequests;
+                        if (data.avgLatency) document.getElementById('user-avg-latency').textContent = data.avgLatency;
+                        if (data.errorRate) document.getElementById('user-error-rate').textContent = data.errorRate;
+                    });
+            }
+
+            let allMarketplaceApis = [];
+
+            async function loadMarketplace() {
+                try {
+                    const res = await fetch('http://localhost:3000/api/apis');
+                    const apis = await res.json();
+                    allMarketplaceApis = apis;
+                    renderMarketplace(apis);
+                } catch (err) {
+                    console.error("Marketplace error", err);
+                }
+            }
+
+            function renderMarketplace(apis) {
+                const container = document.querySelector('.marketplace');
+                container.innerHTML = '';
+
+                if (apis.length === 0) {
+                    container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #64748b; padding: 40px;">No APIs found matching your search.</p>';
+                    return;
+                }
+
+                apis.forEach(api => {
+                    const card = document.createElement('div');
+                    card.className = 'api-card';
+                    card.innerHTML = `
+                        <img src="${api.image}" alt="">
+                        <h3>${api.name}</h3>
+                        <span>${api.provider}</span>
+                        <p>${api.description}</p>
+                        <div class="api-footer">
+                            <label>₹${api.price}</label>
+                            <button onclick="purchaseApi(${api.id})">Request Access</button>
+                        </div>
+                   `;
+                    container.appendChild(card);
+                });
+            }
+
+            window.filterMarketplace = () => {
+                const searchStr = document.getElementById('api-search-input').value.toLowerCase();
+                const filtered = allMarketplaceApis.filter(api =>
+                    api.name.toLowerCase().includes(searchStr) ||
+                    api.provider.toLowerCase().includes(searchStr) ||
+                    api.description.toLowerCase().includes(searchStr) ||
+                    (api.category && api.category.toLowerCase().includes(searchStr))
+                );
+                renderMarketplace(filtered);
+            };
+
+            // Make purchaseApi global so onclick works
+            window.purchaseApi = (apiId) => {
+                if (!currentUser) return showToast("Please login first", "error");
+                const api = allMarketplaceApis.find(a => a.id === apiId);
+                togglePurchaseModal(true, api);
+            };
+
+            window.executePurchase = async () => {
+                const apiId = window.pendingPurchaseApiId;
+                if (!apiId) return;
+
+                togglePurchaseModal(false);
+
+                try {
+                    const res = await fetch('http://localhost:3000/api/apis/purchase', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: currentUser.id, apiId })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        showToast("Success! " + data.message);
+                        loadUserDashboard(); // Refresh credits & active APIs
+                        loadUserBilling();
+                        loadAdminDashboard();
+                        loadAdminTransactions(); // Refresh admin finances if logged in as admin
+                    } else {
+                        showToast("Purchase Failed: " + data.message, "error");
+                    }
+                } catch (err) {
+                    showToast("Error processing purchase", "error");
+                }
+            };
+
+            // Allow user to remove an API
+            window.removeApi = async (apiId) => {
+                if (!currentUser) return;
+                if (!confirm("Are you sure you want to remove this API from your services?")) return;
+
+                try {
+                    const res = await fetch(`http://localhost:3000/api/user/${currentUser.id}/apis/${apiId}/remove`, {
+                        method: 'POST'
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        showToast("API Removed Successfully!");
+                        loadUserDashboard(); // Refresh the list without refreshing page
+                        loadAdminDashboard(); // Update total API count in admin console if relevant
+                    } else {
+                        showToast("Failed to remove API: " + data.message, "error");
+                    }
+                } catch (err) {
+                    showToast("Error removing API: " + err, "error");
+                }
+            };
+
+            async function loadUserBilling() {
+                const res = await fetch(
+                    `http://localhost:3000/api/user/${currentUser.id}/billing`
+                );
+                const transactions = await res.json();
+
+                const tbody = document.querySelector(
+                    '#user-billing-section table tbody'
+                );
+
+                tbody.innerHTML = '';
+
+                transactions.forEach(tx => {
+                    const tr = document.createElement('tr');
+                    const txDate = new Date(tx.date).toLocaleDateString();
+                    tr.innerHTML = `
+                        <td>#TXN-${tx.id}</td>
+                        <td>${txDate}</td>
+                        <td>₹ ${tx.amount}</td>
+                        <td><span class="status-badge paid">Success</span></td>
+                        <td>${tx.description}</td>
+                        <td><a href="#" class="invoice-link" onclick="downloadReceipt(${tx.id}, '${txDate}', ${tx.amount}, '${tx.description}')">Download</a></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            // Generate and prompt TXT receipt download
+            window.downloadReceipt = (id, date, amount, description) => {
+                const receiptContent = `
+=========================================
+            API HUB PLATFORM
+=========================================
+          TRANSACTION RECEIPT
+
+Receipt No:   TXN-${id}
+Date:         ${date}
+Customer:     ${currentUser.name || currentUser.firstName + ' ' + currentUser.lastName}
+Email:        ${currentUser.email}
+
+-----------------------------------------
+Description:
+${description}
+
+Status:       SUCCESS
+-----------------------------------------
+TOTAL PAID:   INR ${amount}.00
+=========================================
+Thank you for using API Hub.
+=========================================
+                `.trim();
+
+                const blob = new Blob([receiptContent], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `receipt_TXN_${id}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
+            async function loadAdminDashboard() {
+                try {
+                    const res = await fetch('http://localhost:3000/api/admin/stats');
+                    const data = await res.json();
+
+                    // Revenue
+                    document.querySelector(
+                        '#admin-dashboard-section .overview .box:nth-child(1) h2'
+                    ).textContent = `₹ ${data.revenue.toLocaleString()}`;
+
+                    // Total Users
+                    document.querySelector(
+                        '#admin-dashboard-section .overview .box:nth-child(2) h2'
+                    ).textContent = data.totalUsers;
+
+                    const tbody = document.querySelector(
+                        '#admin-dashboard-section table tbody'
+                    );
+
+                    tbody.innerHTML = '';
+
+                    data.allUsers.forEach(u => {
+
+                        const statusBadge =
+                            u.status === 'active'
+                                ? `<span class="status-badge paid">Active</span>`
+                                : `<span class="status-badge error">Suspended</span>`;
+
+                        const actionButton =
+                            u.status === 'active'
+                                ? `<button class="small danger" onclick="suspendUser(${u.id})">Suspend</button>`
+                                : `<button class="small" style="background:#10b981" onclick="activateUser(${u.id})">Activate</button>`;
+
+                        const apiDisplay = u.apiCount > 0
+                            ? `<button class="small" style="background: white; border: 1px solid #1f4ed8; color: #1f4ed8;" onclick="viewUserApis(${u.id}, '${u.firstName} ${u.lastName}')">View ${u.apiCount} APIs</button>`
+                            : `0`;
+
+                        const tr = document.createElement('tr');
+
+                        tr.innerHTML = `
+                <td>
+                    <strong>${u.firstName} ${u.lastName}</strong><br>
+                    <span style="font-size:12px; color:gray">${u.email}</span>
+                </td>
+                <td>${u.role}</td>
+                <td>${statusBadge}</td>
+                <td>₹ ${u.credits}</td>
+                <td>${apiDisplay}</td>
+                <td>${actionButton}</td>
+            `;
+
+                        tbody.appendChild(tr);
+                    });
+
+                    // 4. Load Global Settings
+                    const configRes = await fetch('http://localhost:3000/api/admin/config');
+                    const configData = await configRes.json();
+                    if (configData.success && configData.config) {
+                        document.getElementById('admin-rate-limit').value = configData.config.userRateLimit;
+                        document.getElementById('admin-traffic-cap').value = configData.config.globalTrafficCap;
+                        document.getElementById('admin-maintenance-mode').checked = configData.config.maintenanceMode === 1;
+                    }
+
+                    // 5. Load APIs for Marketplace Management
+                    const apisRes = await fetch('http://localhost:3000/api/admin/apis/all');
+                    const apisData = await apisRes.json();
+                    const apisContainer = document.getElementById('admin-api-list');
+                    apisContainer.innerHTML = '';
+
+                    apisData.forEach(api => {
+                        const div = document.createElement('div');
+                        div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;";
+
+                        const statusColor = api.status === 'active' ? 'black' : 'gray';
+                        const disableText = api.status === 'active' ? 'Disable' : 'Enable';
+                        const disableClass = api.status === 'active' ? 'danger' : '';
+                        const disableStyle = api.status === 'active' ? '' : 'background: #10b981; color: white;';
+
+                        div.innerHTML = `
+                            <span style="font-weight: 500; color: ${statusColor};">${api.name} (₹ ${api.price})</span>
+                            <div style="display: flex; gap: 5px;">
+                                <button class="small" style="padding: 4px 8px;" onclick="editApi(${api.id}, '${api.name}', ${api.price})">Edit</button>
+                                <button class="small ${disableClass}" style="padding: 4px 8px; ${disableStyle}" onclick="toggleApiStatus(${api.id}, '${api.status}')">${disableText}</button>
+                            </div>
+                        `;
+                        apisContainer.appendChild(div);
+                    });
+
+                } catch (err) {
+                    console.error("Admin dashboard error:", err);
+                }
+            }
+
+            async function loadAdminTransactions() {
+                try {
+                    const res = await fetch('http://localhost:3000/api/admin/billing');
+                    const data = await res.json();
+
+                    if (!data.success) return;
+
+                    // Update metrics
+                    document.querySelector('#admin-billing-section .overview .box:nth-child(1) h2').textContent = `₹ ${data.totalRevenue.toLocaleString()}`;
+                    document.querySelector('#admin-billing-section .overview .box:nth-child(3) h2').textContent = `₹ ${data.avgTransaction}`;
+
+                    // Note: Pending Payouts & Refund Rate are hardcoded for now, as those features aren't built in the DB yet
+                    document.querySelector('#admin-billing-section .overview .box:nth-child(2) h2').textContent = `₹ ${(data.totalRevenue * 0.1).toLocaleString()}`; // Fake 10% payout
+
+                    const tbody = document.querySelector('#admin-billing-section .billing-table tbody');
+                    tbody.innerHTML = '';
+
+                    data.transactions.forEach(tx => {
+                        let statusHtml = tx.type === 'purchase' ? '<span class="status-badge paid">Success</span>' : '<span class="status-badge pending">Pending</span>';
+
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>#TXN-${tx.id}</td>
+                            <td>${tx.userEmail || 'Unknown'}</td>
+                            <td>${tx.type === 'purchase' ? 'API Purchase' : 'Credit Top-up'}</td>
+                            <td>₹ ${tx.amount}</td>
+                            <td>${new Date(tx.date).toLocaleString()}</td>
+                            <td>${statusHtml}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+
+                } catch (err) {
+                    console.error("Admin billing data error:", err);
+                }
+            }
+
+            // ============================
+            // 5. NAVIGATION & RBAC
+            // ============================
+            let currentRole = 'user';
+
+            function configureInterface(role) {
+                currentRole = role;
+                const sidebarLinks = document.querySelectorAll('.sidebar nav a');
+
+                sidebarLinks.forEach(link => {
+                    const target = link.getAttribute('data-target');
+                    let visible = false;
+
+                    // if (target === 'dashboard-section') visible = true; 
+                    if (target === 'billing-section') visible = true;
+                    if (target === 'settings-section') visible = true; // Everyone has settings likely
+
+                    if (role === 'admin') {
+                        if (target === 'dashboard-section') {
+                            visible = true;
+                            link.textContent = "Admin Console";
+                        }
+
+                        // Hide user-specific settings sections
+                        const userSettingElements = document.querySelectorAll('.user-only-setting');
+                        userSettingElements.forEach(el => el.style.display = 'none');
+
+                    } else {
+                        if (['dashboard-section', 'marketplace-section', 'usage-section'].includes(target)) {
+                            visible = true;
+                            if (target === 'usage-section') loadUserUsagePage();
+                        }
+
+                        // Show user-specific settings sections
+                        const userSettingElements = document.querySelectorAll('.user-only-setting');
+                        userSettingElements.forEach(el => el.style.display = 'block');
+                    }
+
+                    link.style.display = visible ? 'block' : 'none';
+                });
+
+                // Set initial active section
+                if (role === 'admin') {
+                    showSection('admin-dashboard-section');
+                } else {
+                    showSection('marketplace-section');
+                }
+            }
+
+            function showSection(sectionId) {
+                // Redirects
+                if (sectionId === 'dashboard-section') {
+                    sectionId = currentRole === 'admin' ? 'admin-dashboard-section' : 'user-dashboard-section';
+                }
+                if (sectionId === 'billing-section') {
+                    sectionId = currentRole === 'admin' ? 'admin-billing-section' : 'user-billing-section';
+                }
+
+                const sections = document.querySelectorAll('.page-section');
+                const navLinks = document.querySelectorAll('.sidebar nav a');
+
+                sections.forEach(sec => sec.classList.remove('active-section'));
+
+                const target = document.getElementById(sectionId);
+                if (target) {
+                    target.classList.add('active-section');
+                    // Trigger specific data loads for sections
+                    if (sectionId === 'usage-section') loadUserUsagePage();
+                    if (sectionId === 'user-billing-section') loadUserBilling();
+                    if (sectionId === 'user-dashboard-section') loadUserDashboard();
+                    if (sectionId === 'settings-section') loadUserSettings();
+                }
+
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    const linkTarget = link.getAttribute('data-target');
+
+                    let isActive = false;
+                    if (linkTarget === sectionId) isActive = true;
+                    if (linkTarget === 'dashboard-section' && sectionId.includes('dashboard-section')) isActive = true;
+                    if (linkTarget === 'billing-section' && sectionId.includes('billing-section')) isActive = true;
+
+                    if (isActive) link.classList.add('active');
+                });
+            }
+
+            const sidebarNavLinks = document.querySelectorAll('.sidebar nav a');
+            sidebarNavLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetId = link.getAttribute('data-target');
+                    if (targetId) showSection(targetId);
+                });
+            });
+
+            // Admin User Search logic
+            window.filterAdminUsers = function () {
+                const searchStr = document.getElementById('admin-user-search').value.toLowerCase();
+                const tbody = document.querySelector('#admin-dashboard-section table tbody');
+                if (!tbody) return;
+                const rows = tbody.getElementsByTagName('tr');
+                for (let i = 0; i < rows.length; i++) {
+                    const text = rows[i].textContent.toLowerCase();
+                    if (text.includes(searchStr)) {
+                        rows[i].style.display = '';
+                    } else {
+                        rows[i].style.display = 'none';
+                    }
+                }
+            };
+
+            // Admin Logic for Viewing and Removing Specific User APIs
+            window.viewUserApis = async (userId, userName) => {
+                try {
+                    const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/apis`);
+                    const data = await res.json();
+
+                    if (!data.success) {
+                        return alert("Failed to load user APIs: " + data.message);
+                    }
+
+                    const modal = document.getElementById('admin-user-apis-modal');
+                    const modalTitle = document.getElementById('admin-modal-title');
+                    const apiListContainer = document.getElementById('admin-modal-api-list');
+
+                    modalTitle.textContent = `Active APIs for ${userName}`;
+                    apiListContainer.innerHTML = '';
+
+                    if (data.activeApis.length === 0) {
+                        apiListContainer.innerHTML = '<p style="color: gray; font-size: 14px; text-align: center; margin: 20px 0;">No active APIs found for this user.</p>';
+                    } else {
+                        data.activeApis.forEach(api => {
+                            const div = document.createElement('div');
+                            div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee;";
+                            div.innerHTML = `
+                                <div>
+                                    <span style="font-weight: 500; display: block;">${api.name}</span>
+                                    <span style="font-size: 12px; color: gray;">${api.category}</span>
+                                </div>
+                                <button class="small danger" style="padding: 4px 8px;" onclick="adminRemoveUserApi(${userId}, ${api.id})">Remove</button>
+                            `;
+                            apiListContainer.appendChild(div);
+                        });
+                    }
+
+                    modal.style.display = 'flex';
+                } catch (err) {
+                    alert("Error loading APIs: " + err);
+                }
+            };
+
+            window.closeAdminModal = () => {
+                document.getElementById('admin-user-apis-modal').style.display = 'none';
+            };
+
+            window.adminRemoveUserApi = async (userId, apiId) => {
+                if (!confirm("Remove this API exactly for this specific user?")) return;
+
+                try {
+                    const res = await fetch(`http://localhost:3000/api/user/${userId}/apis/${apiId}/remove`, {
+                        method: 'POST'
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        showToast("API Removed Successfully!");
+                        // Refresh the modal dynamically so we see it vanish
+                        const userName = document.getElementById('admin-modal-title').textContent.replace('Active APIs for ', '');
+                        await viewUserApis(userId, userName);
+                        // Update background tables
+                        loadAdminDashboard();
+                    } else {
+                        showToast("Removal failed: " + data.message, "error");
+                    }
+                } catch (err) {
+                    showToast("Error removing API.", "error");
+                }
+            };
+
+            // Generic function to export an HTML table to CSV
+            window.exportTableToCSV = function (tableId, filename) {
+                const table = document.getElementById(tableId);
+                if (!table) return alert('Table not found.');
+
+                let csv = [];
+                // Iterate through all rows
+                for (let i = 0; i < table.rows.length; i++) {
+                    const row = [], cols = table.rows[i].querySelectorAll('td, th');
+                    // Iterate through all columns in row
+                    for (let j = 0; j < cols.length; j++) {
+                        // Get inner text, remove newlines, escape potential quotes
+                        let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, '').trim();
+                        data = data.replace(/"/g, '""');
+                        // Push into array enclosed with quotes
+                        row.push('"' + data + '"');
+                    }
+                    csv.push(row.join(','));
+                }
+
+                // Create CSV file text
+                const csvStr = csv.join('\n');
+
+                // Trigger download
+                const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        });
+
+    </script>
+    <style>
+        /* Simple utility for initial state */
+        #app-view {
+            display: none;
+            width: 100%;
+        }
+
+        #signup-view {
+            display: none;
+            /* Hidden by default */
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            width: 440px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            transform: scale(0.95);
+            transition: transform 0.2s ease-out;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-overlay.active .modal-content {
+            transform: scale(1);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        /* Toast Notifications */
+        #toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .toast {
+            min-width: 300px;
+            padding: 16px 20px;
+            background: #1e293b;
+            color: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideIn 0.3s ease-out;
+            cursor: pointer;
+        }
+
+        .toast.success {
+            border-left: 4px solid #10b981;
+        }
+
+        .toast.error {
+            border-left: 4px solid #ef4444;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast.fade-out {
+            transform: translateX(100%);
+            opacity: 0;
+            transition: all 0.3s ease-in;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Admin Modal -->
+    <div id="admin-user-apis-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 id="admin-modal-title"
+                style="margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee;">User APIs</h3>
+            <div id="admin-modal-api-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">
+                <!-- Dynamically populated -->
+            </div>
+            <div style="text-align: right;">
+                <button onclick="closeAdminModal()" style="background: #e2e8f0; color: #333;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Purchase Confirmation Modal -->
+    <div id="purchase-confirm-modal" class="modal-overlay">
+        <div class="modal-content" style="text-align: center;">
+            <div
+                style="width: 80px; height: 80px; background: #eff6ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                <span style="font-size: 40px;">💳</span>
+            </div>
+            <h2 style="margin-bottom: 8px;">Confirm Purchase</h2>
+            <p style="color: #64748b; margin-bottom: 24px;">Would you like to purchase access to this API?</p>
+
+            <div
+                style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 24px; display: flex; align-items: center; gap: 16px; text-align: left;">
+                <img id="modal-api-img" src=""
+                    style="width: 50px; height: 50px; border-radius: 8px; object-fit: cover;">
+                <div style="flex: 1;">
+                    <h4 id="modal-api-name" style="margin: 0; font-size: 16px;">API Name</h4>
+                    <span id="modal-api-price" style="color: #2563eb; font-weight: 700;">₹100</span>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;">
+                <button onclick="togglePurchaseModal(false)"
+                    style="background: #f1f5f9; color: #475569; margin: 0;">Cancel</button>
+                <button onclick="executePurchase()" style="background: #2563eb; color: white; margin: 0;">Confirm
+                    Purchase</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- =========================
+         LOGIN VIEW
+         ========================= -->
+    <!-- =========================
+         LOGIN VIEW
+         ========================= -->
+    <div id="login-view" class="login-container">
+        <div class="login-card">
+            <div class="icon">✨</div>
+            <h2>Welcome Back</h2>
+            <p>Enter your credentials to access your account.</p>
+
+            <form id="login-form" autocomplete="off">
+                <!-- Dummy fields to trick browser autofill -->
+                <input type="text" name="prevent_autofill" id="prevent_autofill" value="" style="display:none;"
+                    tabindex="-1" aria-hidden="true" autocomplete="off">
+                <input type="password" name="password_fake" id="password_fake" value="" style="display:none;"
+                    tabindex="-1" aria-hidden="true" autocomplete="off">
+
+                <label>Email Address</label>
+                <input type="email" id="login-email" placeholder="name@company.com" required autocomplete="off" readonly
+                    onfocus="this.removeAttribute('readonly');">
+
+                <label>Password</label>
+                <input type="password" id="login-pass" placeholder="••••••••" required autocomplete="new-password"
+                    readonly onfocus="this.removeAttribute('readonly');">
+
+                <button type="submit">Sign In</button>
+            </form>
+
+            <div class="links">
+                <p>Don't have an account? <a href="#" id="go-to-signup">Create one now</a></p>
+                <p><a href="#" id="go-to-forgot-pass">Forgot Password?</a></p>
+                <p style="opacity: 0.5; font-size: 12px; margin-top: 15px;">Demo: admin@admin.com / admin</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================
+         OTP VIEW (NEW)
+         ========================= -->
+    <div id="otp-view" class="login-container" style="display: none;">
+        <div class="login-card">
+            <div class="icon">🛡️</div>
+            <h2>Verify Identity</h2>
+            <p id="otp-message">We've sent a 6-digit code to your email and phone.</p>
+
+            <form id="otp-form">
+                <label>Verification Code</label>
+                <input type="text" id="otp-input" placeholder="000000" maxlength="6"
+                    style="text-align: center; letter-spacing: 8px; font-size: 24px; font-weight: bold;" required>
+
+                <button type="submit">Verify & Login</button>
+            </form>
+
+            <div class="links">
+                <p>Didn't receive code? <a href="#" id="resend-otp">Resend Code</a></p>
+                <p><a href="#" id="back-to-login">Back to Login</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================
+          FORGOT PASSWORD VIEW
+          ========================= -->
+    <div id="forgot-pass-view" class="login-container" style="display: none;">
+        <div class="login-card">
+            <div class="icon">🔑</div>
+            <h2>Forgot Password</h2>
+            <p>Enter your email to receive a reset code.</p>
+
+            <form id="forgot-pass-form">
+                <label>Email Address</label>
+                <input type="email" id="forgot-pass-email" placeholder="name@company.com" required>
+
+                <button type="submit">Send Reset Code</button>
+            </form>
+
+            <div class="links">
+                <p><a href="#" id="back-to-login-forgot">Back to Login</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================
+          RESET PASSWORD VIEW
+          ========================= -->
+    <div id="reset-pass-view" class="login-container" style="display: none;">
+        <div class="login-card">
+            <div class="icon">🔓</div>
+            <h2>Reset Password</h2>
+            <p>Enter the code and your new password.</p>
+
+            <form id="reset-pass-form">
+                <label>Verification Code</label>
+                <input type="text" id="reset-pass-otp" placeholder="000000" maxlength="6"
+                    style="text-align: center; letter-spacing: 8px; font-size: 24px; font-weight: bold;" required>
+
+                <label>New Password</label>
+                <input type="password" id="reset-new-pass" placeholder="••••••••" required>
+
+                <label>Confirm New Password</label>
+                <input type="password" id="reset-confirm-pass" placeholder="••••••••" required>
+
+                <button type="submit">Reset Password</button>
+            </form>
+
+            <div class="links">
+                <p><a href="#" id="back-to-login-reset">Back to Login</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================
+         SIGNUP VIEW
+         ========================= -->
+    <div id="signup-view" class="login-container" style="display: none;">
+        <div class="login-card" style="width: 450px;">
+            <div class="icon">🚀</div>
+            <h2>Join API Hub</h2>
+            <p>Start building with the world's most powerful APIs.</p>
+
+            <form id="signup-form" style="text-align: left;" autocomplete="off">
+                <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 15px; display: grid;">
+                    <div>
+                        <label style="margin-top: 0;">First Name</label>
+                        <input type="text" id="reg-fname" placeholder="John" required autocomplete="given-name">
+                    </div>
+                    <div>
+                        <label style="margin-top: 0;">Last Name</label>
+                        <input type="text" id="reg-lname" placeholder="Doe" required autocomplete="family-name">
+                    </div>
+                </div>
+
+                <label>Contact Number (for OTP)</label>
+                <input type="text" id="reg-contact" placeholder="+91 9876543210" required autocomplete="tel">
+
+                <label>Email Address</label>
+                <input type="email" id="reg-email" placeholder="john@example.com" required autocomplete="email">
+
+                <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 15px; display: grid;">
+                    <div>
+                        <label>Password</label>
+                        <input type="password" id="reg-pass" placeholder="••••••••" required
+                            autocomplete="new-password">
+                        <div class="password-strength">
+                            <div id="strength-bar" class="strength-bar"></div>
+                        </div>
+                        <div id="strength-text" class="strength-text">Use 8+ chars, mixed case & symbols</div>
+                    </div>
+                    <div>
+                        <label>Confirm</label>
+                        <input type="password" id="reg-confirm-pass" placeholder="••••••••" required
+                            autocomplete="new-password">
+                    </div>
+                </div>
+
+                <button type="submit" id="signup-btn">Create Account</button>
+            </form>
+
+            <div class="links">
+                <p>Already have an account? <a href="#" id="go-to-login">Sign In</a></p>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- =========================
+         MAIN APPLICATION VIEW
+         ========================= -->
+    <div id="app-view" class="layout">
+
+        <!-- SIDEBAR (Common) -->
+        <aside class="sidebar">
+            <div class="brand">API Hub</div>
+            <nav>
+                <a href="#" data-target="dashboard-section" class="active">Dashboard</a>
+                <a href="#" data-target="marketplace-section">API Marketplace</a>
+                <a href="#" data-target="usage-section">Usage</a>
+                <a href="#" data-target="billing-section">Billing</a>
+                <a href="#" data-target="settings-section">Settings</a>
+            </nav>
+
+            <div class="credits-pill">
+                <span id="sidebar-balance">Wallet: ₹ 2,450</span>
+                <button class="add-credits-btn-small" onclick="window.showTopupModal()">+</button>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT AREA -->
+        <main class="main">
+            <div class="container">
+
+                <!-- 1. DASHBOARD SECTION (CONTAINER) -->
+                <!-- We will toggle visibility of inner containers based on role -->
+
+                <!-- A. USER DASHBOARD -->
+                <section id="user-dashboard-section" class="page-section">
+                    <header class="header">
+                        <div>
+                            <h1>User Dashboard</h1>
+                            <p>Manage your API credits and track your application usage</p>
+                        </div>
+                    </header>
+
+                    <!-- Overview Boxes -->
+                    <div class="overview">
+                        <div class="box">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <h4>Available Credits</h4>
+                                <button class="small" style="padding: 4px 10px; margin: 0; font-size: 12px;"
+                                    onclick="window.showTopupModal()">+ Add Credits</button>
+                            </div>
+                            <h2 id="user-balance-display">₹ 2,450</h2>
+                            <span>Current balance</span>
+                        </div>
+                        <div class="box">
+                            <h4>My Active APIs</h4>
+                            <h2>3</h2>
+                            <span>Connected services</span>
+                        </div>
+                        <div class="box">
+                            <h4>Total Requests</h4>
+                            <h2>1,205</h2>
+                            <span>This month</span>
+                        </div>
+                        <div class="box">
+                            <h4>Avg Latency</h4>
+                            <h2>145ms</h2>
+                            <span>Global performance</span>
+                        </div>
+                    </div>
+
+                    <!-- Panels -->
+                    <div class="panels">
+                        <!-- API Discovery -->
+                        <!-- Quick Access: API Key & Active Services -->
+                        <div class="panel large">
+                            <h3>Quick Access</h3>
+
+                            <!-- API Key Display -->
+                            <div
+                                style="background: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+                                <label
+                                    style="font-size: 12px; font-weight: 600; color: #64748b; display: block; margin-bottom: 8px;">YOUR
+                                    PRIMARY API KEY</label>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <code
+                                        style="background: #1e293b; color: #10b981; padding: 8px 12px; border-radius: 4px; flex: 1; font-family: monospace;">ak_live_••••••••••••••••</code>
+                                    <button class="small" style="margin:0;">Show</button>
+                                    <button class="small" style="margin:0;">Copy</button>
+                                </div>
+                            </div>
+
+                            <!-- My APIs List -->
+                            <h4 style="font-size: 14px; margin-bottom: 15px;">My Active Services</h4>
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <div
+                                            style="width: 32px; height: 32px; background: #e0e7ff; color: #4338ca; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px;">
+                                            🗺️</div>
+                                        <div>
+                                            <div style="font-weight: 600; font-size: 14px;">GeoMapper Pro</div>
+                                            <div style="font-size: 12px; color: #64748b;">330/1000 rq this month</div>
+                                        </div>
+                                    </div>
+                                    <span class="status-badge paid">Active</span>
+                                </div>
+
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <div
+                                            style="width: 32px; height: 32px; background: #dcfce7; color: #15803d; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px;">
+                                            🤖</div>
+                                        <div>
+                                            <div style="font-weight: 600; font-size: 14px;">Sentiment AI</div>
+                                            <div style="font-size: 12px; color: #64748b;">Pay-as-you-go</div>
+                                        </div>
+                                    </div>
+                                    <span class="status-badge paid">Running</span>
+                                </div>
+                            </div>
+
+                            <div style="margin-top: 15px; text-align: right;">
+                                <button class="small"
+                                    style="background: white; border: 1px solid #d1d5db; color: #374151;">Manage All
+                                    Services</button>
+                            </div>
+                        </div>
+
+                        <!-- Usage Chart -->
+                        <div class="panel">
+                            <h3>My Traffic</h3>
+                            <p>Your Request volume (Last 7 Days)</p>
+                            <div style="height: 250px; width: 100%; margin-top: 15px;">
+                                <canvas id="trafficChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+
+                <!-- B. ADMIN DASHBOARD -->
+                <section id="admin-dashboard-section" class="page-section">
+                    <header class="header">
+                        <div>
+                            <h1>Admin Console</h1>
+                            <p>System-wide monitoring and user governance</p>
+                        </div>
+                    </header>
+
+                    <!-- System Overview -->
+                    <div class="overview">
+                        <div class="box" style="border-bottom: 4px solid #1f4ed8;">
+                            <h4>Total Revenue</h4>
+                            <h2>₹ 4.2M</h2>
+                            <span>+12% from last month</span>
+                        </div>
+                        <div class="box" style="border-bottom: 4px solid #1f4ed8;">
+                            <h4>Total Users</h4>
+                            <h2>8,492</h2>
+                            <span>150 joined today</span>
+                        </div>
+                        <div class="box" style="border-bottom: 4px solid #10b981;">
+                            <h4>System Health</h4>
+                            <h2>99.99%</h2>
+                            <span>All gateways operational</span>
+                        </div>
+                        <div class="box" style="border-bottom: 4px solid #f59e0b;">
+                            <h4>Active Alerts</h4>
+                            <h2>2</h2>
+                            <span>High latency warnings</span>
+                        </div>
+                    </div>
+
+                    <!-- Admin Panels -->
+                    <!-- Admin Panels -->
+                    <div class="panels" style="grid-template-columns: 1fr 1fr; gap: 20px;">
+
+                        <!-- 1. Global System Configuration -->
+                        <div class="panel">
+                            <h3>Global Configuration</h3>
+                            <p>System-wide rate limits and operational settings</p>
+
+                            <div style="margin-top: 15px;">
+                                <div style="margin-bottom: 15px;">
+                                    <label
+                                        style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 5px;">Default
+                                        User Rate Limit (RPM)</label>
+                                    <input type="number" id="admin-rate-limit" value="100"
+                                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <label
+                                        style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 5px;">Global
+                                        Traffic Cap (Daily)</label>
+                                    <input type="number" id="admin-traffic-cap" value="1000000"
+                                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                </div>
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                    <span style="font-size: 14px;">Maintenance Mode</span>
+                                    <input type="checkbox" id="admin-maintenance-mode" style="width: auto;">
+                                </div>
+                                <div style="text-align: right;">
+                                    <button class="small" onclick="applyGlobalConfig()">Apply
+                                        Changes</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2. API Marketplace Control -->
+                        <div class="panel">
+                            <h3>Marketplace Management</h3>
+                            <p>Manage available APIs and pricing</p>
+
+                            <div id="admin-api-list"
+                                style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
+                                <!-- Dynamically populated APIs -->
+                            </div>
+                            <div style="margin-top: 15px; text-align: center;">
+                                <button style="width: 100%;" onclick="addNewApi()">+ Add New API</button>
+                            </div>
+                        </div>
+
+                        <!-- 3. User Governance Table -->
+                        <div class="panel large" style="grid-column: span 2;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                <h3 style="margin: 0;">User Management & Governance</h3>
+                                <div style="position: relative;">
+                                    <span style="position: absolute; left: 10px; top: 10px; color: #9ca3af;">🔍</span>
+                                    <input type="text" id="admin-user-search"
+                                        placeholder="Search users by name or email..."
+                                        style="padding: 10px 10px 10px 35px; border: 1px solid #e2e8f0; border-radius: 8px; width: 300px; font-size: 14px;"
+                                        onkeyup="filterAdminUsers()">
+                                </div>
+                            </div>
+                            <table class="billing-table" id="admin-users-table">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Role</th>
+                                        <th>Status</th>
+                                        <th>Credits</th>
+                                        <th>APIs</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>John Doe</strong><br><span
+                                                style="font-size:12px; color:gray">john@tech.com</span></td>
+                                        <td>User</td>
+                                        <td><span class="status-badge paid">Active</span></td>
+                                        <td>₹ 2,450</td>
+                                        <td>2</td>
+                                        <td>
+                                            <button class="small danger"
+                                                style="padding: 4px 8px; margin:0;">Suspend</button>
+                                            <button class="small" style="padding: 4px 8px; margin:0;">Reset Key</button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Alice Smith</strong><br><span
+                                                style="font-size:12px; color:gray">alice@studio.io</span></td>
+                                        <td>User</td>
+                                        <td><span class="status-badge paid">Active</span></td>
+                                        <td>₹ 500</td>
+                                        <td>1</td>
+                                        <td>
+                                            <button class="small danger"
+                                                style="padding: 4px 8px; margin:0;">Suspend</button>
+                                            <button class="small" style="padding: 4px 8px; margin:0;">Reset Key</button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Robert Key</strong><br><span
+                                                style="font-size:12px; color:gray">rob@dev.net</span></td>
+                                        <td>User</td>
+                                        <td><span class="status-badge error">Suspended</span></td>
+                                        <td>₹ 0</td>
+                                        <td>5</td>
+                                        <td>
+                                            <button class="small"
+                                                style="padding: 4px 8px; background: #10b981; margin:0;">Activate</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                    </div>
+                </section>
+
+
+                <!-- 2. MARKETPLACE SECTION -->
+                <section id="marketplace-section" class="page-section">
+                    <header class="header">
+                        <h1>API Marketplace</h1>
+                        <p>Browse and discover APIs to power your next project.</p>
+                    </header>
+
+                    <div class="search-bar">
+                        <input type="text" id="api-search-input" placeholder="Search for APIs..."
+                            onkeyup="filterMarketplace()">
+                    </div>
+
+                    <div class="marketplace">
+                        <!-- API 1 -->
+                        <div class="api-card">
+                            <img src="https://images.unsplash.com/photo-1524666041070-9d87656c25bb?q=80&w=600" alt="">
+                            <h3>GeoMapper API</h3>
+                            <span>TerraMaps Inc.</span>
+                            <p>Integrate dynamic, interactive maps into your applications with ease.</p>
+                            <div class="api-footer">
+                                <label>Mapping</label>
+                                <button>Request Access</button>
+                            </div>
+                        </div>
+                        <!-- API 2 -->
+                        <div class="api-card">
+                            <img src="https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?q=80&w=600" alt="">
+                            <h3>WeatherCast API</h3>
+                            <span>AtmoSphere</span>
+                            <p>Real-time and forecasted weather intelligence for global locations.</p>
+                            <div class="api-footer">
+                                <label>Data</label>
+                                <button>Request Access</button>
+                            </div>
+                        </div>
+                        <!-- API 3 -->
+                        <div class="api-card">
+                            <img src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?q=80&w=600" alt="">
+                            <h3>PayStack API</h3>
+                            <span>FinSecure</span>
+                            <p>A secure and scalable payment processing API for modern businesses.</p>
+                            <div class="api-footer">
+                                <label>Finance</label>
+                                <button>Request Access</button>
+                            </div>
+                        </div>
+                        <!-- API 4 -->
+                        <div class="api-card">
+                            <img src="https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=600" alt="">
+                            <h3>CloudStore API</h3>
+                            <span>InfraCloud</span>
+                            <p>Reliable object storage and file management for cloud-native apps.</p>
+                            <div class="api-footer">
+                                <label>Cloud</label>
+                                <button>Request Access</button>
+                            </div>
+                        </div>
+                        <!-- API 5 -->
+                        <div class="api-card">
+                            <img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=600" alt="">
+                            <h3>InsightLytics API</h3>
+                            <span>DataDriven Co.</span>
+                            <p>Advanced analytics and metrics tracking for application behavior.</p>
+                            <div class="api-footer">
+                                <label>Analytics</label>
+                                <button>Request Access</button>
+                            </div>
+                        </div>
+                        <!-- API 6 -->
+                        <div class="api-card">
+                            <img src="https://images.unsplash.com/photo-1519389950473-47ba0277781c?q=80&w=600" alt="">
+                            <h3>AuthShield API</h3>
+                            <span>SecureLayer</span>
+                            <p>Authentication, token management, and identity verification services.</p>
+                            <div class="api-footer">
+                                <label>Security</label>
+                                <button>Request Access</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+
+                <!-- 3. USAGE SECTION -->
+                <section id="usage-section" class="page-section">
+                    <header class="header">
+                        <h1>API Usage</h1>
+                        <p>Track your API consumption and performance metrics</p>
+                    </header>
+
+                    <!-- Main Usage Chart -->
+                    <div class="panel large">
+                        <h3>API Usage This Week</h3>
+                        <p>Total API requests made in the last 7 days</p>
+                        <div style="height: 350px; width: 100%; margin-top: 15px;">
+                            <canvas id="userUsageWeekChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Metrics Row -->
+                    <div class="metrics">
+                        <div class="metric-card">
+                            <h4>Total Requests</h4>
+                            <h2 id="user-total-requests">18,942</h2>
+                            <span>Processed in last 7 days</span>
+                        </div>
+                        <div class="metric-card">
+                            <h4>Average Latency</h4>
+                            <h2 id="user-avg-latency">210 ms</h2>
+                            <span>Across all APIs</span>
+                        </div>
+                        <div class="metric-card">
+                            <h4>Error Rate</h4>
+                            <h2 id="user-error-rate">0.8%</h2>
+                            <span>Failed requests</span>
+                        </div>
+                    </div>
+
+                    <!-- Lower Panels -->
+                    <div class="lower-panels">
+                        <div class="panel">
+                            <h3>Average Response Time</h3>
+                            <p>Measured latency trends over recent requests</p>
+                            <div style="height: 200px; width: 100%; position: relative; margin-top: 15px;">
+                                <canvas id="userResponseTimeChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <h3>Error Distribution</h3>
+                            <p>Failure patterns and request anomalies</p>
+                            <div style="height: 200px; width: 100%; position: relative; margin-top: 15px;">
+                                <canvas id="userErrorDistChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+
+                <!-- 4. BILLING SECTION (ROUTED) -->
+
+                <!-- A. ADMIN BILLING (Global Revenue) -->
+                <section id="admin-billing-section" class="page-section">
+                    <header class="header">
+                        <div>
+                            <h1>Financial Overview</h1>
+                            <p>Revenue streams, transaction logs, and payout settings</p>
+                        </div>
+                    </header>
+
+                    <div class="overview">
+                        <div class="box">
+                            <h4>Total Revenue (MTD)</h4>
+                            <h2>₹ 12,50,000</h2>
+                            <span>Month to Date</span>
+                        </div>
+                        <div class="box">
+                            <h4>Pending Payouts</h4>
+                            <h2>₹ 1,20,000</h2>
+                            <span>To API Providers</span>
+                        </div>
+                        <div class="box">
+                            <h4>Avg Transaction</h4>
+                            <h2>₹ 450</h2>
+                            <span>Per User Top-up</span>
+                        </div>
+                        <div class="box">
+                            <h4>Refund Rate</h4>
+                            <h2>0.2%</h2>
+                            <span>Low</span>
+                        </div>
+                    </div>
+
+                    <div class="panel large">
+                        <h3>Recent Transactions (Global)</h3>
+                        <table class="billing-table" id="admin-transactions-table">
+                            <thead>
+                                <tr>
+                                    <th>Transaction ID</th>
+                                    <th>User</th>
+                                    <th>Type</th>
+                                    <th>Amount</th>
+                                    <th>Time</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Real Transactions Injected Here via loadAdminTransactions() -->
+                            </tbody>
+                        </table>
+                        <div style="margin-top: 20px; text-align: right;">
+                            <button
+                                onclick="exportTableToCSV('admin-transactions-table', 'admin_transactions.csv')">Export
+                                to CSV</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- B. USER BILLING (Personal) -->
+                <section id="user-billing-section" class="page-section">
+                    <header class="header">
+                        <h1>My Billing &amp; Usage</h1>
+                        <p>Review your transaction history and download past receipts</p>
+                    </header>
+
+                    <!-- Invoice History -->
+                    <div class="panel" style="margin-top: 20px;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h3 style="margin: 0;">Billing History</h3>
+                        </div>
+                        <table class="billing-table">
+                            <thead>
+                                <tr>
+                                    <th>Transaction ID</th>
+                                    <th>Date</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Description</th>
+                                    <th>Receipt</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>#INV-2024-001</td>
+                                    <td>Feb 01, 2026</td>
+                                    <td>₹ 4,999.00</td>
+                                    <td><span class="status-badge paid">Paid</span></td>
+                                    <td><a href="#" class="invoice-link">Download</a></td>
+                                </tr>
+                                <tr>
+                                    <td>#INV-2024-002</td>
+                                    <td>Jan 01, 2026</td>
+                                    <td>₹ 4,999.00</td>
+                                    <td><span class="status-badge paid">Paid</span></td>
+                                    <td><a href="#" class="invoice-link">Download</a></td>
+                                </tr>
+                                <tr>
+                                    <td>#INV-2023-012</td>
+                                    <td>Dec 01, 2025</td>
+                                    <td>₹ 4,500.00</td>
+                                    <td><span class="status-badge paid">Paid</span></td>
+                                    <td><a href="#" class="invoice-link">Download</a></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+
+                <!-- 5. SETTINGS SECTION -->
+                <section id="settings-section" class="page-section">
+                    <header class="header">
+                        <h1>Settings</h1>
+                        <p>Manage platform configuration and account controls</p>
+                    </header>
+
+                    <!-- Account -->
+                    <div class="settings-section">
+                        <h3>Account Information</h3>
+                        <div class="form-grid">
+                            <div>
+                                <label>Full Name</label>
+                                <input type="text" id="set-fullname" placeholder="Enter full name">
+                            </div>
+                            <div>
+                                <label>Email Address</label>
+                                <input type="email" id="set-email" placeholder="Enter email">
+                            </div>
+                            <div>
+                                <label>Organization</label>
+                                <input type="text" id="set-org" placeholder="Enter organization">
+                            </div>
+                            <div>
+                                <label>New Password</label>
+                                <input type="password" id="set-pass" placeholder="••••••••">
+                            </div>
+                        </div>
+                        <button onclick="saveAccountChanges()">Save Account Changes</button>
+                    </div>
+
+                    <!-- API Keys -->
+                    <div class="settings-section user-only-setting">
+                        <h3>API Credentials</h3>
+                        <label>Primary API Key</label>
+                        <div class="api-key-box">
+                            <span id="set-apiKey" style="font-family: monospace;">•••••••••••••••••••••</span>
+                            <div>
+                                <button class="small" id="toggle-key-btn"
+                                    onclick="toggleApiKeyVisibility()">Show</button>
+                                <button class="small" onclick="copyApiKey()">Copy</button>
+                                <button class="small danger" onclick="regenerateApiKey()">Regenerate</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Limits -->
+                    <div class="settings-section user-only-setting">
+                        <h3>Rate Limiting & Quotas</h3>
+                        <div class="form-grid">
+                            <div>
+                                <label>Requests Per Minute</label>
+                                <input type="number" id="set-rpm-limit" placeholder="120" disabled
+                                    title="Contact admin to change limits">
+                            </div>
+                            <div>
+                                <label>Daily Limit</label>
+                                <input type="number" id="set-daily-limit" placeholder="10000" disabled
+                                    title="Contact admin to change limits">
+                            </div>
+                        </div>
+                        <p style="font-size: 12px; color: #64748b; margin-top: 5px;">* Limits are managed by system
+                            administrators.</p>
+                    </div>
+
+                    <!-- Billing Preferences -->
+                    <div class="settings-section user-only-setting">
+                        <h3>Billing Preferences</h3>
+                        <div class="toggle-row">
+                            <span>Enable Auto Recharge</span>
+                            <div class="toggle" id="set-autoRecharge" onclick="togglePreference('set-autoRecharge')">
+                            </div>
+                        </div>
+                        <div class="toggle-row">
+                            <span>Low Credit Notifications</span>
+                            <div class="toggle" id="set-lowCredit" onclick="togglePreference('set-lowCredit')"></div>
+                        </div>
+                    </div>
+
+                    <!-- Security -->
+                    <div class="settings-section">
+                        <h3>Security Controls</h3>
+                        <div class="form-grid">
+                            <div>
+                                <label>Session Timeout (minutes)</label>
+                                <input type="number" id="set-timeout" placeholder="30">
+                            </div>
+                        </div>
+                        <div class="toggle-row">
+                            <span>Two-Factor Authentication</span>
+                            <div class="toggle" id="set-2fa" onclick="togglePreference('set-2fa')"></div>
+                        </div>
+                        <button onclick="updatePreferences()">Update Security & Preferences</button>
+                    </div>
+                </section>
+
+            </div>
+    </div>
+
+    <!-- =========================
+         TOP-UP MODAL
+         ========================= -->
+    <div id="topup-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Top-up Wallet</h3>
+                <button class="close-modal" onclick="window.hideTopupModal()">&times;</button>
+            </div>
+
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Choose an amount to add to your API Hub
+                wallet.</p>
+
+            <div class="topup-amount-selector">
+                <button class="amount-pill" onclick="setTopupAmount(500)">₹ 500</button>
+                <button class="amount-pill active" onclick="setTopupAmount(1000)">₹ 1,000</button>
+                <button class="amount-pill" onclick="setTopupAmount(2000)">₹ 2,000</button>
+                <button class="amount-pill" onclick="setTopupAmount(5000)">₹ 5,000</button>
+            </div>
+
+            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px;">Custom Amount</label>
+            <input type="number" id="custom-topup-amount" value="1000"
+                style="width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 20px;">
+
+            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px;">Select Payment
+                Method</label>
+            <div class="payment-options">
+                <div class="payment-method selected" onclick="selectPaymentMethod(this, 'card')">
+                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">💳</span>
+                    <span style="font-size: 12px; font-weight: 600;">Credit/Debit</span>
+                </div>
+                <div class="payment-method" onclick="selectPaymentMethod(this, 'upi')">
+                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">📱</span>
+                    <span style="font-size: 12px; font-weight: 600;">UPI / Google Pay</span>
+                </div>
+                <div class="payment-method" onclick="selectPaymentMethod(this, 'paypal')">
+                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">🅿️</span>
+                    <span style="font-size: 12px; font-weight: 600;">PayPal</span>
+                </div>
+                <div class="payment-method" onclick="selectPaymentMethod(this, 'bank')">
+                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">🏦</span>
+                    <span style="font-size: 12px; font-weight: 600;">Net Banking</span>
+                </div>
+            </div>
+
+            <div class="topup-btn-container">
+                <button id="process-topup-btn" onclick="window.processTopup()">Proceed to Pay</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>
