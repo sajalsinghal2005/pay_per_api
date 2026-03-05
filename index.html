@@ -178,7 +178,7 @@
                         document.getElementById('set-2fa').classList.toggle('active', s.twoFactorAuth === 1);
 
                         // Mask API key by default
-                        window.isApiKeyVisible = false;
+                        window.settingsApiKeyVisible = false;
                         document.getElementById('set-apiKey').textContent = '•••••••••••••••••••••';
                     }
                 } catch (err) {
@@ -256,10 +256,16 @@
                 document.getElementById(id).classList.toggle('active');
             };
 
-            window.toggleApiKeyVisibility = () => {
-                const el = document.getElementById('set-apiKey');
-                const btn = document.getElementById('toggle-key-btn');
-                if (window.isApiKeyVisible) {
+            window.toggleApiKeyVisibility = (context = 'settings') => {
+                const isSettings = context === 'settings';
+                const elId = isSettings ? 'set-apiKey' : 'dashboard-apiKey';
+                const btnId = isSettings ? 'toggle-key-btn' : 'dashboard-toggle-key-btn';
+                const visibleVar = isSettings ? 'settingsApiKeyVisible' : 'dashboardApiKeyVisible';
+
+                const el = document.getElementById(elId);
+                const btn = document.getElementById(btnId);
+
+                if (window[visibleVar]) {
                     el.textContent = '•••••••••••••••••••••';
                     btn.textContent = 'Show';
                 } else {
@@ -273,10 +279,10 @@
                         });
                     btn.textContent = 'Hide';
                 }
-                window.isApiKeyVisible = !window.isApiKeyVisible;
+                window[visibleVar] = !window[visibleVar];
             };
 
-            window.copyApiKey = () => {
+            window.copyApiKey = (context = 'settings') => {
                 fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`)
                     .then(res => res.json())
                     .then(data => {
@@ -294,9 +300,13 @@
                     const data = await res.json();
                     if (data.success) {
                         showToast("New API key generated!");
-                        document.getElementById('set-apiKey').textContent = data.apiKey;
-                        window.isApiKeyVisible = true;
-                        document.getElementById('toggle-key-btn').textContent = 'Hide';
+                        const key = data.apiKey;
+                        if (document.getElementById('set-apiKey')) document.getElementById('set-apiKey').textContent = key;
+                        if (document.getElementById('dashboard-apiKey')) document.getElementById('dashboard-apiKey').textContent = key;
+                        window.settingsApiKeyVisible = true;
+                        window.dashboardApiKeyVisible = true;
+                        if (document.getElementById('toggle-key-btn')) document.getElementById('toggle-key-btn').textContent = 'Hide';
+                        if (document.getElementById('dashboard-toggle-key-btn')) document.getElementById('dashboard-toggle-key-btn').textContent = 'Hide';
                     }
                 } catch (err) {
                     showToast("Error regenerating API key.", "error");
@@ -591,8 +601,13 @@
                     document.querySelector('#user-dashboard-section .overview .box:nth-child(2) h2').textContent = data.activeApis.length;
 
                     // Update API Key
-                    const keyDisplay = document.querySelector('#user-dashboard-section code');
-                    if (keyDisplay) keyDisplay.textContent = data.apiKey;
+                    const keyDisplay = document.getElementById('dashboard-apiKey');
+                    if (keyDisplay) {
+                        keyDisplay.textContent = '•••••••••••••••••••••';
+                        window.dashboardApiKeyVisible = false;
+                        const btn = document.getElementById('dashboard-toggle-key-btn');
+                        if (btn) btn.textContent = 'Show';
+                    }
 
                     // Render Active Services List
                     const servicesContainer = document.querySelector('#user-dashboard-section .panel.large .flex-column');
@@ -1786,10 +1801,12 @@ Thank you for using API Hub.
                                     style="font-size: 12px; font-weight: 600; color: #64748b; display: block; margin-bottom: 8px;">YOUR
                                     PRIMARY API KEY</label>
                                 <div style="display: flex; align-items: center; gap: 10px;">
-                                    <code
-                                        style="background: #1e293b; color: #10b981; padding: 8px 12px; border-radius: 4px; flex: 1; font-family: monospace;">ak_live_••••••••••••••••</code>
-                                    <button class="small" style="margin:0;">Show</button>
-                                    <button class="small" style="margin:0;">Copy</button>
+                                    <code id="dashboard-apiKey"
+                                        style="background: #1e293b; color: #10b981; padding: 8px 12px; border-radius: 4px; flex: 1; font-family: monospace;">•••••••••••••••••••••</code>
+                                    <button class="small" id="dashboard-toggle-key-btn" style="margin:0;"
+                                        onclick="toggleApiKeyVisibility('dashboard')">Show</button>
+                                    <button class="small" style="margin:0;"
+                                        onclick="copyApiKey('dashboard')">Copy</button>
                                 </div>
                             </div>
 
@@ -2286,8 +2303,8 @@ Thank you for using API Hub.
                             <span id="set-apiKey" style="font-family: monospace;">•••••••••••••••••••••</span>
                             <div>
                                 <button class="small" id="toggle-key-btn"
-                                    onclick="toggleApiKeyVisibility()">Show</button>
-                                <button class="small" onclick="copyApiKey()">Copy</button>
+                                    onclick="toggleApiKeyVisibility('settings')">Show</button>
+                                <button class="small" onclick="copyApiKey('settings')">Copy</button>
                                 <button class="small danger" onclick="regenerateApiKey()">Regenerate</button>
                             </div>
                         </div>
