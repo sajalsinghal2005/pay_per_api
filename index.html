@@ -436,33 +436,113 @@
                 }
 
                 try {
+                    // Stage 1: Send OTP
+                    if (!window.isOtpSent) {
+                        const registerBtn = document.getElementById('signup-btn');
+                        registerBtn.disabled = true;
+                        registerBtn.textContent = "Sending OTP...";
+
+                        const res = await fetch(API_BASE_URL + '/api/auth/send-otp', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email })
+                        });
+                        const data = await res.json();
+
+                        if (data.success || data.dev_otp) {
+                            const otp = data.dev_otp || "CHECK CONSOLE"; // Logic fallback
+
+                            // 1. Show Inbox for Demo
+                            const inbox = document.getElementById('simulated-inbox');
+                            const messages = document.getElementById('inbox-messages');
+                            inbox.style.display = 'flex';
+                            messages.innerHTML = `
+                                <div class="email-item">
+                                    <div class="email-sender">API Hub Support</div>
+                                    <div class="email-subject">Verify your registration</div>
+                                    <p style="margin-bottom:10px;">Your verification code is below. Use it to complete your signup.</p>
+                                    <div class="email-otp-code">${data.dev_otp || '******'}</div>
+                                </div>
+                            ` + messages.innerHTML;
+
+                            // 2. UI Transitions
+                            showToast(data.success ? "OTP sent to your email!" : "Email delivery blocked (Demo Mode)", data.success ? "success" : "error");
+                            document.getElementById('otp-section').style.display = 'block';
+                            registerBtn.disabled = false;
+                            registerBtn.textContent = "Verify & Register";
+                            window.isOtpSent = true;
+                            startResendTimer();
+                        } else {
+                            showToast("Error: " + (data.message || "Failed to send OTP"), "error");
+                            registerBtn.disabled = false;
+                            registerBtn.textContent = "Send OTP";
+                        }
+                        return;
+                    }
+
+                    // Stage 2: Register with OTP
+                    const otp = document.getElementById('reg-otp').value;
+                    if (!otp || otp.length !== 6) return showToast("Please enter 6-digit OTP", "error");
+
                     const res = await fetch(API_BASE_URL + '/api/auth/register', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ firstName: fname, lastName: lname, email, contact, password: pass })
+                        body: JSON.stringify({ firstName: fname, lastName: lname, email, contact, password: pass, otp })
                     });
                     const data = await res.json();
 
                     if (data.success) {
                         showToast("Registration Successful! Please Login.");
                         signupForm.reset();
+                        window.isOtpSent = false;
+                        document.getElementById('otp-section').style.display = 'none';
+                        document.getElementById('signup-btn').textContent = "Send OTP";
                         strengthBar.style.width = '0%';
                         signupView.style.display = 'none';
                         loginView.style.display = 'flex';
                     } else {
-                        // More descriptive error handling
-                        if (data.message.includes('already registered')) {
-                            showToast("This email is already registered. Redirecting to login...", "error");
-                            signupForm.reset();
-                            signupView.style.display = 'none';
-                            loginView.style.display = 'flex';
-                        } else {
-                            showToast("Registration Failed: " + data.message, "error");
-                        }
+                        showToast(data.message, "error");
                     }
                 } catch (err) {
                     console.error(err);
                     showToast("An error occurred during registration.", "error");
+                }
+            });
+
+            // Timer for Resend
+            let resendTimer = 30;
+            let timerId = null;
+            function startResendTimer() {
+                const btn = document.getElementById('resend-otp-btn');
+                const timerSpan = document.getElementById('otp-timer');
+                resendTimer = 30;
+                btn.style.pointerEvents = 'none';
+                btn.style.opacity = '0.5';
+
+                clearInterval(timerId);
+                timerId = setInterval(() => {
+                    resendTimer--;
+                    timerSpan.textContent = resendTimer;
+                    if (resendTimer <= 0) {
+                        clearInterval(timerId);
+                        btn.style.pointerEvents = 'auto';
+                        btn.style.opacity = '1';
+                        btn.textContent = "Resend OTP";
+                    }
+                }, 1000);
+            }
+
+            document.getElementById('resend-otp-btn').addEventListener('click', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('reg-email').value;
+                const res = await fetch(API_BASE_URL + '/api/auth/send-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                if ((await res.json()).success) {
+                    showToast("OTP resent!");
+                    startResendTimer();
                 }
             });
 
@@ -536,24 +616,113 @@
                     showToast("An error occurred during password reset.", "error");
                 }
             });
+            let isLoginOtpSent = false;
+            let loginResendTimer = 30;
+            let loginTimerId = null;
+
+            function startLoginResendTimer() {
+                const btn = document.getElementById('login-resend-otp-btn');
+                const timerSpan = document.getElementById('login-otp-timer');
+                loginResendTimer = 30;
+                btn.style.pointerEvents = 'none';
+                btn.style.opacity = '0.5';
+
+                clearInterval(loginTimerId);
+                loginTimerId = setInterval(() => {
+                    loginResendTimer--;
+                    timerSpan.textContent = loginResendTimer;
+                    if (loginResendTimer <= 0) {
+                        clearInterval(loginTimerId);
+                        btn.style.pointerEvents = 'auto';
+                        btn.style.opacity = '1';
+                        btn.textContent = "Resend OTP";
+                    }
+                }, 1000);
+            }
+
+            document.getElementById('login-resend-otp-btn').addEventListener('click', async (e) => {
+                e.preventDefault();
+                const res = await fetch(API_BASE_URL + '/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: loginEmail, password: document.getElementById('login-pass').value })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast("OTP resent!");
+                    startLoginResendTimer();
+                }
+            });
+
             loginForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 loginEmail = document.getElementById('login-email').value;
                 const pass = document.getElementById('login-pass').value;
 
                 try {
-                    const res = await fetch(API_BASE_URL + '/api/auth/login', {
+                    if (!isLoginOtpSent) {
+                        const loginBtn = document.getElementById('login-btn');
+                        loginBtn.disabled = true;
+                        loginBtn.textContent = "Sending OTP...";
+
+                        const res = await fetch(API_BASE_URL + '/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: loginEmail, password: pass })
+                        });
+                        const data = await res.json();
+
+                        if (data.success && data.requireOtp) {
+                            // Show Simulated Inbox for Demo
+                            const inbox = document.getElementById('simulated-inbox');
+                            const messages = document.getElementById('inbox-messages');
+                            inbox.style.display = 'flex';
+                            messages.innerHTML = `
+                                <div class="email-item">
+                                    <div class="email-sender">API Hub Support</div>
+                                    <div class="email-subject">Login Verification</div>
+                                    <p style="margin-bottom:10px;">Your login verification code is below.</p>
+                                    <div class="email-otp-code">${data.dev_otp || '******'}</div>
+                                </div>
+                            ` + messages.innerHTML;
+
+                            showToast("OTP sent to your email!");
+                            document.getElementById('login-otp-section').style.display = 'block';
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = "Verify & Sign In";
+                            isLoginOtpSent = true;
+                            startLoginResendTimer();
+                        } else if (data.success && !data.requireOtp) {
+                            // Fallback if OTP is disabled for some reason
+                            currentUser = data.user;
+                            loginSuccess();
+                        } else {
+                            showToast("Login Failed: " + data.message, "error");
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = "Sign In";
+                        }
+                        return;
+                    }
+
+                    // Stage 2: Verify Login OTP
+                    const otp = document.getElementById('login-otp').value;
+                    if (!otp || otp.length !== 6) return showToast("Please enter 6-digit OTP", "error");
+
+                    const res = await fetch(API_BASE_URL + '/api/auth/login-confirm', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email: loginEmail, password: pass })
+                        body: JSON.stringify({ email: loginEmail, otp })
                     });
                     const data = await res.json();
 
                     if (data.success) {
                         currentUser = data.user;
+                        isLoginOtpSent = false;
+                        document.getElementById('login-otp-section').style.display = 'none';
+                        document.getElementById('login-btn').textContent = "Sign In";
                         loginSuccess();
                     } else {
-                        showToast("Login Failed: " + data.message, "error");
+                        showToast(data.message, "error");
                     }
                 } catch (err) {
                     console.error(err);
@@ -1529,6 +1698,84 @@ Thank you for using API Hub.
             opacity: 0;
             transition: all 0.3s ease-in;
         }
+
+        /* Simulated Inbox Styles */
+        #simulated-inbox {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            z-index: 10000;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .inbox-header {
+            background: #2563eb;
+            color: white;
+            padding: 12px 15px;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .inbox-body {
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f8fafc;
+        }
+
+        .email-item {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+
+        .email-sender {
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 4px;
+        }
+
+        .email-subject {
+            color: #64748b;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .email-otp-code {
+            font-size: 18px;
+            font-weight: 800;
+            color: #2563eb;
+            letter-spacing: 2px;
+            text-align: center;
+            background: #eff6ff;
+            padding: 10px;
+            border-radius: 6px;
+        }
     </style>
 </head>
 
@@ -1580,6 +1827,18 @@ Thank you for using API Hub.
     <!-- Toast Container -->
     <div id="toast-container"></div>
 
+    <!-- Simulated Inbox (Demo Only) -->
+    <div id="simulated-inbox">
+        <div class="inbox-header">
+            <span>📫 Simulated Inbox</span>
+            <button onclick="document.getElementById('simulated-inbox').style.display='none'"
+                style="background:none; border:none; color:white; cursor:pointer; padding:0; font-size:18px;">&times;</button>
+        </div>
+        <div class="inbox-body" id="inbox-messages">
+            <p style="text-align:center; color:#94a3b8; font-size:12px;">No new messages</p>
+        </div>
+    </div>
+
     <!-- =========================
          LOGIN VIEW
          ========================= -->
@@ -1607,7 +1866,19 @@ Thank you for using API Hub.
                 <input type="password" id="login-pass" placeholder="••••••••" required autocomplete="new-password"
                     readonly onfocus="this.removeAttribute('readonly');">
 
-                <button type="submit">Sign In</button>
+                <button type="submit" id="login-btn">Sign In</button>
+
+                <!-- Login OTP Section (Hidden initially) -->
+                <div id="login-otp-section"
+                    style="display: none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
+                    <label>Enter 6-Digit OTP</label>
+                    <input type="text" id="login-otp" placeholder="000000" maxlength="6">
+                    <div style="font-size: 12px; margin-top: 5px; color: #64748b;">
+                        Didn't receive? <a href="#" id="login-resend-otp-btn"
+                            style="color: #2563eb; pointer-events: none; opacity: 0.5;">Resend in <span
+                                id="login-otp-timer">30</span>s</a>
+                    </div>
+                </div>
             </form>
 
             <div class="links">
@@ -1711,7 +1982,19 @@ Thank you for using API Hub.
                     </div>
                 </div>
 
-                <button type="submit" id="signup-btn">Create Account</button>
+                <!-- OTP Field (Hidden initially) -->
+                <div id="otp-section"
+                    style="display: none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
+                    <label>Enter 6-Digit OTP</label>
+                    <input type="text" id="reg-otp" placeholder="000000" maxlength="6">
+                    <div style="font-size: 12px; margin-top: 5px; color: #64748b;">
+                        Didn't receive? <a href="#" id="resend-otp-btn"
+                            style="color: #2563eb; pointer-events: none; opacity: 0.5;">Resend in <span
+                                id="otp-timer">30</span>s</a>
+                    </div>
+                </div>
+
+                <button type="submit" id="signup-btn" style="margin-top: 20px;">Send OTP</button>
             </form>
 
             <div class="links">
