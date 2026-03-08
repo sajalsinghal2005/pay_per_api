@@ -424,110 +424,88 @@
                 const pass = document.getElementById('reg-pass').value;
                 const confirmPass = document.getElementById('reg-confirm-pass').value;
 
-                if (pass !== confirmPass) {
-                    showToast("Passwords do not match!", "error");
-                    return;
-                }
+                if (!window.isOtpSent) {
+                    if (pass !== confirmPass) return showToast("Passwords do not match!", "error");
+                    if (pass.length < 8 || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) {
+                        return showToast("Password must be at least 8 chars, 1 uppercase, 1 number.", "error");
+                    }
 
-                // Strength check
-                if (pass.length < 8 || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) {
-                    showToast("Password must be at least 8 characters, include an uppercase letter and a number.", "error");
-                    return;
-                }
+                    const signupBtn = document.getElementById('signup-btn');
+                    signupBtn.disabled = true;
+                    signupBtn.textContent = "Sending OTP...";
 
-                try {
-                    // Stage 1: Send OTP
-                    if (!window.isOtpSent) {
-                        const registerBtn = document.getElementById('signup-btn');
-                        registerBtn.disabled = true;
-                        registerBtn.textContent = "Sending OTP...";
-
-                        const res = await fetch(API_BASE_URL + '/api/auth/send-otp', {
+                    try {
+                        const res = await fetch(API_BASE_URL + '/send-otp', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ email })
                         });
                         const data = await res.json();
-
-                        if (data.success || data.dev_otp) {
-                            const otp = data.dev_otp || "CHECK CONSOLE"; // Logic fallback
-
-                            // 1. Show Inbox for Demo
-                            const inbox = document.getElementById('simulated-inbox');
-                            const messages = document.getElementById('inbox-messages');
-                            inbox.style.display = 'flex';
-                            messages.innerHTML = `
-                                <div class="email-item">
-                                    <div class="email-sender">API Hub Support</div>
-                                    <div class="email-subject">Verify your registration</div>
-                                    <p style="margin-bottom:10px;">Your verification code is below. Use it to complete your signup.</p>
-                                    <div class="email-otp-code">${data.dev_otp || '******'}</div>
-                                </div>
-                            ` + messages.innerHTML;
-
-                            // 2. UI Transitions
-                            showToast(data.success ? "OTP sent to your email!" : "Email delivery blocked (Demo Mode)", data.success ? "success" : "error");
+                        if (data.success) {
+                            showToast("Verification code sent to email!");
+                            document.getElementById('signup-fields').style.display = 'none';
                             document.getElementById('otp-section').style.display = 'block';
-                            registerBtn.disabled = false;
-                            registerBtn.textContent = "Verify & Register";
+                            signupBtn.disabled = false;
+                            signupBtn.textContent = "Verify & Create Account";
                             window.isOtpSent = true;
-                            startResendTimer();
+                            startResendTimer('signup');
                         } else {
-                            showToast("Error: " + (data.message || "Failed to send OTP"), "error");
-                            registerBtn.disabled = false;
-                            registerBtn.textContent = "Send OTP";
+                            showToast(data.message, "error");
+                            signupBtn.disabled = false;
+                            signupBtn.textContent = "Send OTP";
                         }
-                        return;
+                    } catch (err) {
+                        showToast("Failed to connect to server", "error");
+                        signupBtn.disabled = false;
+                        signupBtn.textContent = "Send OTP";
                     }
-
-                    // Stage 2: Register with OTP
+                } else {
                     const otp = document.getElementById('reg-otp').value;
-                    if (!otp || otp.length !== 6) return showToast("Please enter 6-digit OTP", "error");
+                    if (otp.length !== 6) return showToast("Enter 6-digit OTP", "error");
 
-                    const res = await fetch(API_BASE_URL + '/api/auth/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ firstName: fname, lastName: lname, email, contact, password: pass, otp })
-                    });
-                    const data = await res.json();
-
-                    if (data.success) {
-                        showToast("Registration Successful! Please Login.");
-                        signupForm.reset();
-                        window.isOtpSent = false;
-                        document.getElementById('otp-section').style.display = 'none';
-                        document.getElementById('signup-btn').textContent = "Send OTP";
-                        strengthBar.style.width = '0%';
-                        signupView.style.display = 'none';
-                        loginView.style.display = 'flex';
-                    } else {
-                        showToast(data.message, "error");
+                    try {
+                        const res = await fetch(API_BASE_URL + '/register', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ firstName: fname, lastName: lname, email, contact, password: pass, otp })
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            showToast("Welcome! Registration successful.");
+                            signupForm.reset();
+                            window.isOtpSent = false;
+                            document.getElementById('signup-fields').style.display = 'block';
+                            document.getElementById('otp-section').style.display = 'none';
+                            signupView.style.display = 'none';
+                            loginView.style.display = 'flex';
+                        } else {
+                            showToast(data.message, "error");
+                        }
+                    } catch (err) {
+                        showToast("Registration failed", "error");
                     }
-                } catch (err) {
-                    console.error(err);
-                    showToast("An error occurred during registration.", "error");
                 }
             });
 
-            // Timer for Resend
-            let resendTimer = 30;
-            let timerId = null;
-            function startResendTimer() {
-                const btn = document.getElementById('resend-otp-btn');
-                const timerSpan = document.getElementById('otp-timer');
-                resendTimer = 30;
-                btn.style.pointerEvents = 'none';
-                btn.style.opacity = '0.5';
+            // Resend Timer Logic
+            let timers = { signup: { val: 30, id: null }, login: { val: 30, id: null } };
+            function startResendTimer(type) {
+                const btn = type === 'signup' ? document.getElementById('resend-otp-btn') : document.getElementById('login-resend-otp-btn');
+                const timerSpan = type === 'signup' ? document.getElementById('otp-timer') : document.getElementById('login-otp-timer');
+                const wrapper = type === 'signup' ? document.getElementById('signup-timer-wrapper') : document.getElementById('login-timer-wrapper');
 
-                clearInterval(timerId);
-                timerId = setInterval(() => {
-                    resendTimer--;
-                    timerSpan.textContent = resendTimer;
-                    if (resendTimer <= 0) {
-                        clearInterval(timerId);
-                        btn.style.pointerEvents = 'auto';
-                        btn.style.opacity = '1';
-                        btn.textContent = "Resend OTP";
+                timers[type].val = 30;
+                btn.style.display = 'none';
+                wrapper.style.display = 'inline';
+
+                clearInterval(timers[type].id);
+                timers[type].id = setInterval(() => {
+                    timers[type].val--;
+                    timerSpan.textContent = timers[type].val;
+                    if (timers[type].val <= 0) {
+                        clearInterval(timers[type].id);
+                        btn.style.display = 'inline';
+                        wrapper.style.display = 'none';
                     }
                 }, 1000);
             }
@@ -535,76 +513,162 @@
             document.getElementById('resend-otp-btn').addEventListener('click', async (e) => {
                 e.preventDefault();
                 const email = document.getElementById('reg-email').value;
-                const res = await fetch(API_BASE_URL + '/api/auth/send-otp', {
+                const res = await fetch(API_BASE_URL + '/send-otp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email })
                 });
                 if ((await res.json()).success) {
-                    showToast("OTP resent!");
-                    startResendTimer();
+                    showToast("Code resent!");
+                    startResendTimer('signup');
+                }
+            });
+
+            document.getElementById('login-resend-otp-btn').addEventListener('click', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('login-email').value;
+                const res = await fetch(API_BASE_URL + '/send-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                if ((await res.json()).success) {
+                    showToast("Code resent!");
+                    startResendTimer('login');
                 }
             });
 
             // Handle Login
-            let loginEmail = '';
-            let loginUserId = null;
-            let resetUserId = null; // Store for password reset
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('login-email').value;
+                const password = document.getElementById('login-pass').value;
 
-            // Handle Forgot Password Request
+                if (!window.isLoginOtpSent) {
+                    const loginBtn = document.getElementById('login-btn');
+                    loginBtn.disabled = true;
+                    loginBtn.textContent = "Checking...";
+
+                    try {
+                        const res = await fetch(API_BASE_URL + '/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email, password })
+                        });
+                        const data = await res.json();
+                        if (data.success && data.requireOtp) {
+                            // Stage 1 pass, send OTP
+                            await fetch(API_BASE_URL + '/send-otp', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email })
+                            });
+                            showToast("Credentials verified. Check email for OTP.");
+                            document.getElementById('login-fields').style.display = 'none';
+                            document.getElementById('login-otp-section').style.display = 'block';
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = "Confirm Login";
+                            window.isLoginOtpSent = true;
+                            startResendTimer('login');
+                        } else {
+                            showToast(data.message, "error");
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = "Sign In";
+                        }
+                    } catch (err) {
+                        showToast("Server error", "error");
+                        loginBtn.disabled = false;
+                    }
+                } else {
+                    const otp = document.getElementById('login-otp').value;
+                    try {
+                        const res = await fetch(API_BASE_URL + '/verify-otp', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email, otp })
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            // Now fetch actual user data for dashboard
+                            const loginRes = await fetch(API_BASE_URL + '/api/auth/login-confirm', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email, otp })
+                            });
+                            const loginData = await loginRes.json();
+                            currentUser = loginData.user;
+                            loginSuccess();
+                        } else {
+                            showToast(data.message, "error");
+                        }
+                    } catch (err) {
+                        showToast("Verification failed", "error");
+                    }
+                }
+            });
+
+            // Handle Forgot Password
             forgotPassForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const email = document.getElementById('forgot-pass-email').value;
+                const forgotBtn = document.getElementById('forgot-pass-btn');
+                forgotBtn.disabled = true;
+                forgotBtn.textContent = "Sending...";
 
                 try {
-                    const res = await fetch(API_BASE_URL + '/api/auth/forgot-password', {
+                    const res = await fetch(API_BASE_URL + '/forgot-password', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email })
                     });
                     const data = await res.json();
-
                     if (data.success) {
-                        showToast(data.message);
-                        resetUserId = data.userId;
+                        // Send OTP
+                        await fetch(API_BASE_URL + '/send-otp', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email })
+                        });
+                        showToast("User found. OTP sent to email.");
+                        window.forgotEmail = email;
+                        window.forgotUserId = data.userId;
                         forgotPassView.style.display = 'none';
                         resetPassView.style.display = 'flex';
                     } else {
                         showToast(data.message, "error");
                     }
                 } catch (err) {
-                    console.error(err);
-                    showToast("An error occurred.", "error");
+                    showToast("Server error", "error");
+                } finally {
+                    forgotBtn.disabled = false;
+                    forgotBtn.textContent = "Continue";
                 }
             });
 
-            // Handle Reset Password Submission
+            // Handle Reset Password
             resetPassForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const newPass = document.getElementById('reset-new-pass').value;
-                const confirmNewPass = document.getElementById('reset-confirm-pass').value;
+                const otp = document.getElementById('reset-otp').value;
+                const newPassword = document.getElementById('reset-new-pass').value;
+                const confirmPassword = document.getElementById('reset-confirm-pass').value;
 
-                if (newPass !== confirmNewPass) {
-                    showToast("Passwords do not match!", "error");
-                    return;
-                }
-
-                // Strength check
-                if (newPass.length < 8 || !/[A-Z]/.test(newPass) || !/[0-9]/.test(newPass)) {
-                    showToast("Password must be at least 8 characters, include an uppercase letter and a number.", "error");
-                    return;
-                }
+                if (newPassword !== confirmPassword) return showToast("Passwords do not match", "error");
+                if (newPassword.length < 8) return showToast("Password too short", "error");
 
                 try {
-                    const res = await fetch(API_BASE_URL + '/api/auth/reset-password', {
+                    const res = await fetch(API_BASE_URL + '/reset-password', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: resetUserId, newPassword: newPass })
+                        body: JSON.stringify({
+                            userId: window.forgotUserId,
+                            email: window.forgotEmail,
+                            otp,
+                            newPassword
+                        })
                     });
                     const data = await res.json();
-
                     if (data.success) {
-                        showToast(data.message);
+                        showToast("Password updated! Please login.");
                         resetPassForm.reset();
                         resetPassView.style.display = 'none';
                         loginView.style.display = 'flex';
@@ -612,120 +676,6 @@
                         showToast(data.message, "error");
                     }
                 } catch (err) {
-                    console.error(err);
-                    showToast("An error occurred during password reset.", "error");
-                }
-            });
-            let isLoginOtpSent = false;
-            let loginResendTimer = 30;
-            let loginTimerId = null;
-
-            function startLoginResendTimer() {
-                const btn = document.getElementById('login-resend-otp-btn');
-                const timerSpan = document.getElementById('login-otp-timer');
-                loginResendTimer = 30;
-                btn.style.pointerEvents = 'none';
-                btn.style.opacity = '0.5';
-
-                clearInterval(loginTimerId);
-                loginTimerId = setInterval(() => {
-                    loginResendTimer--;
-                    timerSpan.textContent = loginResendTimer;
-                    if (loginResendTimer <= 0) {
-                        clearInterval(loginTimerId);
-                        btn.style.pointerEvents = 'auto';
-                        btn.style.opacity = '1';
-                        btn.textContent = "Resend OTP";
-                    }
-                }, 1000);
-            }
-
-            document.getElementById('login-resend-otp-btn').addEventListener('click', async (e) => {
-                e.preventDefault();
-                const res = await fetch(API_BASE_URL + '/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: loginEmail, password: document.getElementById('login-pass').value })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    showToast("OTP resent!");
-                    startLoginResendTimer();
-                }
-            });
-
-            loginForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                loginEmail = document.getElementById('login-email').value;
-                const pass = document.getElementById('login-pass').value;
-
-                try {
-                    if (!isLoginOtpSent) {
-                        const loginBtn = document.getElementById('login-btn');
-                        loginBtn.disabled = true;
-                        loginBtn.textContent = "Sending OTP...";
-
-                        const res = await fetch(API_BASE_URL + '/api/auth/login', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: loginEmail, password: pass })
-                        });
-                        const data = await res.json();
-
-                        if (data.success && data.requireOtp) {
-                            // Show Simulated Inbox for Demo
-                            const inbox = document.getElementById('simulated-inbox');
-                            const messages = document.getElementById('inbox-messages');
-                            inbox.style.display = 'flex';
-                            messages.innerHTML = `
-                                <div class="email-item">
-                                    <div class="email-sender">API Hub Support</div>
-                                    <div class="email-subject">Login Verification</div>
-                                    <p style="margin-bottom:10px;">Your login verification code is below.</p>
-                                    <div class="email-otp-code">${data.dev_otp || '******'}</div>
-                                </div>
-                            ` + messages.innerHTML;
-
-                            showToast("OTP sent to your email!");
-                            document.getElementById('login-otp-section').style.display = 'block';
-                            loginBtn.disabled = false;
-                            loginBtn.textContent = "Verify & Sign In";
-                            isLoginOtpSent = true;
-                            startLoginResendTimer();
-                        } else if (data.success && !data.requireOtp) {
-                            // Fallback if OTP is disabled for some reason
-                            currentUser = data.user;
-                            loginSuccess();
-                        } else {
-                            showToast("Login Failed: " + data.message, "error");
-                            loginBtn.disabled = false;
-                            loginBtn.textContent = "Sign In";
-                        }
-                        return;
-                    }
-
-                    // Stage 2: Verify Login OTP
-                    const otp = document.getElementById('login-otp').value;
-                    if (!otp || otp.length !== 6) return showToast("Please enter 6-digit OTP", "error");
-
-                    const res = await fetch(API_BASE_URL + '/api/auth/login-confirm', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email: loginEmail, otp })
-                    });
-                    const data = await res.json();
-
-                    if (data.success) {
-                        currentUser = data.user;
-                        isLoginOtpSent = false;
-                        document.getElementById('login-otp-section').style.display = 'none';
-                        document.getElementById('login-btn').textContent = "Sign In";
-                        loginSuccess();
-                    } else {
-                        showToast(data.message, "error");
-                    }
-                } catch (err) {
-                    console.error(err);
                     showToast("An error occurred during login.", "error");
                 }
             });
@@ -1698,84 +1648,6 @@ Thank you for using API Hub.
             opacity: 0;
             transition: all 0.3s ease-in;
         }
-
-        /* Simulated Inbox Styles */
-        #simulated-inbox {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 320px;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-            border: 1px solid #e2e8f0;
-            display: none;
-            flex-direction: column;
-            overflow: hidden;
-            z-index: 10000;
-            animation: slideUp 0.3s ease-out;
-        }
-
-        @keyframes slideUp {
-            from {
-                transform: translateY(100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
-        }
-
-        .inbox-header {
-            background: #2563eb;
-            color: white;
-            padding: 12px 15px;
-            font-weight: 600;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .inbox-body {
-            padding: 15px;
-            max-height: 200px;
-            overflow-y: auto;
-            background: #f8fafc;
-        }
-
-        .email-item {
-            background: white;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-            margin-bottom: 10px;
-            font-size: 13px;
-        }
-
-        .email-sender {
-            font-weight: 700;
-            color: #1e293b;
-            margin-bottom: 4px;
-        }
-
-        .email-subject {
-            color: #64748b;
-            font-size: 12px;
-            margin-bottom: 8px;
-        }
-
-        .email-otp-code {
-            font-size: 18px;
-            font-weight: 800;
-            color: #2563eb;
-            letter-spacing: 2px;
-            text-align: center;
-            background: #eff6ff;
-            padding: 10px;
-            border-radius: 6px;
-        }
     </style>
 </head>
 
@@ -1827,64 +1699,43 @@ Thank you for using API Hub.
     <!-- Toast Container -->
     <div id="toast-container"></div>
 
-    <!-- Simulated Inbox (Demo Only) -->
-    <div id="simulated-inbox">
-        <div class="inbox-header">
-            <span>📫 Simulated Inbox</span>
-            <button onclick="document.getElementById('simulated-inbox').style.display='none'"
-                style="background:none; border:none; color:white; cursor:pointer; padding:0; font-size:18px;">&times;</button>
-        </div>
-        <div class="inbox-body" id="inbox-messages">
-            <p style="text-align:center; color:#94a3b8; font-size:12px;">No new messages</p>
-        </div>
-    </div>
 
-    <!-- =========================
-         LOGIN VIEW
-         ========================= -->
-    <!-- =========================
-         LOGIN VIEW
-         ========================= -->
     <div id="login-view" class="login-container">
         <div class="login-card">
             <div class="icon">✨</div>
             <h2>Welcome Back</h2>
-            <p>Enter your credentials to access your account.</p>
+            <p style="margin-bottom: 30px; font-weight: 500; color: #475569;">Login to your account to continue</p>
 
             <form id="login-form" autocomplete="off">
-                <!-- Dummy fields to trick browser autofill -->
-                <input type="text" name="prevent_autofill" id="prevent_autofill" value="" style="display:none;"
-                    tabindex="-1" aria-hidden="true" autocomplete="off">
-                <input type="password" name="password_fake" id="password_fake" value="" style="display:none;"
-                    tabindex="-1" aria-hidden="true" autocomplete="off">
+                <div id="login-fields">
+                    <label>Email Address</label>
+                    <input type="email" id="login-email" placeholder="name@company.com" required>
 
-                <label>Email Address</label>
-                <input type="email" id="login-email" placeholder="name@company.com" required autocomplete="off" readonly
-                    onfocus="this.removeAttribute('readonly');">
+                    <label>Password</label>
+                    <input type="password" id="login-pass" placeholder="••••••••" required>
+                </div>
 
-                <label>Password</label>
-                <input type="password" id="login-pass" placeholder="••••••••" required autocomplete="new-password"
-                    readonly onfocus="this.removeAttribute('readonly');">
+                <!-- Login OTP Section -->
+                <div id="login-otp-section" style="display: none;">
+                    <label>Confirm Identity</label>
+                    <p style="font-size: 12px; color: #64748b; margin-top: -8px; margin-bottom: 12px;">Check your email
+                        for a 6-digit code.</p>
+                    <input type="text" id="login-otp" placeholder="Enter OTP" maxlength="6"
+                        style="text-align: center; font-size: 24px; letter-spacing: 4px; font-weight: 700;">
 
-                <button type="submit" id="login-btn">Sign In</button>
-
-                <!-- Login OTP Section (Hidden initially) -->
-                <div id="login-otp-section"
-                    style="display: none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
-                    <label>Enter 6-Digit OTP</label>
-                    <input type="text" id="login-otp" placeholder="000000" maxlength="6">
-                    <div style="font-size: 12px; margin-top: 5px; color: #64748b;">
-                        Didn't receive? <a href="#" id="login-resend-otp-btn"
-                            style="color: #2563eb; pointer-events: none; opacity: 0.5;">Resend in <span
-                                id="login-otp-timer">30</span>s</a>
+                    <div style="font-size: 13px; margin-top: 10px; text-align: center;">
+                        <span id="login-timer-wrapper">Resend code in <strong id="login-otp-timer">30</strong>s</span>
+                        <a href="#" id="login-resend-otp-btn"
+                            style="display: none; color: #2563eb; font-weight: 600;">Resend OTP</a>
                     </div>
                 </div>
+
+                <button type="submit" id="login-btn" style="margin-top: 25px;">Sign In</button>
             </form>
 
             <div class="links">
-                <p>Don't have an account? <a href="#" id="go-to-signup">Create one now</a></p>
+                <p>New here? <a href="#" id="go-to-signup">Create an account</a></p>
                 <p><a href="#" id="go-to-forgot-pass">Forgot Password?</a></p>
-                <p style="opacity: 0.5; font-size: 12px; margin-top: 15px;">Demo: admin@admin.com / admin</p>
             </div>
         </div>
     </div>
@@ -1896,18 +1747,18 @@ Thank you for using API Hub.
     <div id="forgot-pass-view" class="login-container" style="display: none;">
         <div class="login-card">
             <div class="icon">🔑</div>
-            <h2>Forgot Password</h2>
-            <p>Enter your email to reset your password.</p>
+            <h2>Reset Access</h2>
+            <p>Enter your email to receive a verification code.</p>
 
             <form id="forgot-pass-form">
                 <label>Email Address</label>
                 <input type="email" id="forgot-pass-email" placeholder="name@company.com" required>
 
-                <button type="submit">Verify Email</button>
+                <button type="submit" id="forgot-pass-btn">Continue</button>
             </form>
 
             <div class="links">
-                <p><a href="#" id="back-to-login-forgot">Back to Login</a></p>
+                <p><a href="#" id="back-to-login-forgot">Return to Login</a></p>
             </div>
         </div>
     </div>
@@ -1918,18 +1769,21 @@ Thank you for using API Hub.
     <div id="reset-pass-view" class="login-container" style="display: none;">
         <div class="login-card">
             <div class="icon">🔓</div>
-            <h2>Reset Password</h2>
-            <p>Enter your new password.</p>
+            <h2>Set New Password</h2>
+            <p>Verification complete. Choose a strong password.</p>
 
             <form id="reset-pass-form">
+                <label>Verification Code</label>
+                <input type="text" id="reset-otp" placeholder="6-digit code" required maxlength="6"
+                    style="text-align: center; font-size: 20px; font-weight: 700;">
 
                 <label>New Password</label>
                 <input type="password" id="reset-new-pass" placeholder="••••••••" required>
 
-                <label>Confirm New Password</label>
+                <label>Confirm Password</label>
                 <input type="password" id="reset-confirm-pass" placeholder="••••••••" required>
 
-                <button type="submit">Reset Password</button>
+                <button type="submit" id="reset-pass-btn">Update Password</button>
             </form>
 
             <div class="links">
@@ -1944,57 +1798,56 @@ Thank you for using API Hub.
     <div id="signup-view" class="login-container" style="display: none;">
         <div class="login-card" style="width: 450px;">
             <div class="icon">🚀</div>
-            <h2>Join API Hub</h2>
-            <p>Start building with the world's most powerful APIs.</p>
+            <h2>Create Account</h2>
+            <p>Get started with API Hub today.</p>
 
-            <form id="signup-form" style="text-align: left;" autocomplete="off">
-                <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 15px; display: grid;">
-                    <div>
-                        <label style="margin-top: 0;">First Name</label>
-                        <input type="text" id="reg-fname" placeholder="John" required autocomplete="given-name">
-                    </div>
-                    <div>
-                        <label style="margin-top: 0;">Last Name</label>
-                        <input type="text" id="reg-lname" placeholder="Doe" required autocomplete="family-name">
-                    </div>
-                </div>
-
-                <label>Contact Number</label>
-                <input type="text" id="reg-contact" placeholder="+91 9876543210" required autocomplete="tel">
-
-                <label>Email Address</label>
-                <input type="email" id="reg-email" placeholder="john@example.com" required autocomplete="email">
-
-                <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 15px; display: grid;">
-                    <div>
-                        <label>Password</label>
-                        <input type="password" id="reg-pass" placeholder="••••••••" required
-                            autocomplete="new-password">
-                        <div class="password-strength">
-                            <div id="strength-bar" class="strength-bar"></div>
+            <form id="signup-form" autocomplete="off">
+                <div id="signup-fields">
+                    <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 15px; display: grid;">
+                        <div>
+                            <label style="margin-top: 0;">First Name</label>
+                            <input type="text" id="reg-fname" placeholder="John" required>
                         </div>
-                        <div id="strength-text" class="strength-text">Use 8+ chars, mixed case & symbols</div>
+                        <div>
+                            <label style="margin-top: 0;">Last Name</label>
+                            <input type="text" id="reg-lname" placeholder="Doe" required>
+                        </div>
                     </div>
-                    <div>
-                        <label>Confirm</label>
-                        <input type="password" id="reg-confirm-pass" placeholder="••••••••" required
-                            autocomplete="new-password">
+
+                    <label>Contact Number</label>
+                    <input type="text" id="reg-contact" placeholder="+91 9876543210" required>
+
+                    <label>Email Address</label>
+                    <input type="email" id="reg-email" placeholder="john@example.com" required>
+
+                    <label>Password</label>
+                    <input type="password" id="reg-pass" placeholder="••••••••" required>
+                    <div class="password-strength">
+                        <div id="strength-bar" class="strength-bar"></div>
                     </div>
+                    <div id="strength-text" class="strength-text">Use 8+ chars, mixed case & symbols</div>
+
+                    <label>Confirm Password</label>
+                    <input type="password" id="reg-confirm-pass" placeholder="••••••••" required>
                 </div>
 
-                <!-- OTP Field (Hidden initially) -->
+                <!-- Signup OTP Section -->
                 <div id="otp-section"
-                    style="display: none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
-                    <label>Enter 6-Digit OTP</label>
-                    <input type="text" id="reg-otp" placeholder="000000" maxlength="6">
-                    <div style="font-size: 12px; margin-top: 5px; color: #64748b;">
-                        Didn't receive? <a href="#" id="resend-otp-btn"
-                            style="color: #2563eb; pointer-events: none; opacity: 0.5;">Resend in <span
-                                id="otp-timer">30</span>s</a>
+                    style="display: none; border-top: 1px solid #f1f5f9; margin-top: 20px; padding-top: 20px;">
+                    <label>Verify Email</label>
+                    <p style="font-size: 12px; color: #64748b; margin-top: -8px; margin-bottom: 12px;">We've sent a code
+                        to your email.</p>
+                    <input type="text" id="reg-otp" placeholder="6-digit code" maxlength="6"
+                        style="text-align: center; font-size: 24px; letter-spacing: 4px; font-weight: 700;">
+
+                    <div style="font-size: 13px; margin-top: 10px; text-align: center;">
+                        <span id="signup-timer-wrapper">Resend in <strong id="otp-timer">30</strong>s</span>
+                        <a href="#" id="resend-otp-btn" style="display: none; color: #2563eb; font-weight: 600;">Resend
+                            OTP</a>
                     </div>
                 </div>
 
-                <button type="submit" id="signup-btn" style="margin-top: 20px;">Send OTP</button>
+                <button type="submit" id="signup-btn" style="margin-top: 25px;">Send OTP</button>
             </form>
 
             <div class="links">
