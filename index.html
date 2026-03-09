@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -1704,38 +1704,41 @@ Thank you for using API Hub.
         <div class="login-card">
             <div class="icon">✨</div>
             <h2>Welcome Back</h2>
-            <p style="margin-bottom: 30px; font-weight: 500; color: #475569;">Login to your account to continue</p>
+            <p>Login to your account to continue</p>
 
             <form id="login-form" autocomplete="off">
                 <div id="login-fields">
                     <label>Email Address</label>
                     <input type="email" id="login-email" placeholder="name@company.com" required>
 
-                    <label>Password</label>
+                    <label style="display: flex; justify-content: space-between; align-items: center;">
+                        Password
+                        <a href="#" id="go-to-forgot-pass"
+                            style="font-size: 12px; color: #60a5fa; font-weight: 500; text-decoration: none;">Forgot?</a>
+                    </label>
                     <input type="password" id="login-pass" placeholder="••••••••" required>
                 </div>
 
                 <!-- Login OTP Section -->
                 <div id="login-otp-section" style="display: none;">
                     <label>Confirm Identity</label>
-                    <p style="font-size: 12px; color: #64748b; margin-top: -8px; margin-bottom: 12px;">Check your email
-                        for a 6-digit code.</p>
-                    <input type="text" id="login-otp" placeholder="Enter OTP" maxlength="6"
-                        style="text-align: center; font-size: 24px; letter-spacing: 4px; font-weight: 700;">
+                    <p style="font-size: 13px; color: #94a3b8; margin-top: 4px; margin-bottom: 20px;">We've sent a
+                        6-digit code to your email.</p>
+                    <input type="text" id="login-otp" placeholder="000000" maxlength="6"
+                        style="text-align: center; font-size: 28px; letter-spacing: 8px; font-weight: 700; background: rgba(15, 23, 42, 0.8);">
 
-                    <div style="font-size: 13px; margin-top: 10px; text-align: center;">
+                    <div style="font-size: 14px; margin-top: 20px; text-align: center; color: #64748b;">
                         <span id="login-timer-wrapper">Resend code in <strong id="login-otp-timer">30</strong>s</span>
                         <a href="#" id="login-resend-otp-btn"
-                            style="display: none; color: #2563eb; font-weight: 600;">Resend OTP</a>
+                            style="display: none; color: #60a5fa; font-weight: 600;">Resend OTP</a>
                     </div>
                 </div>
 
-                <button type="submit" id="login-btn" style="margin-top: 25px;">Sign In</button>
+                <button type="submit" id="login-btn">Sign In</button>
             </form>
 
             <div class="links">
-                <p>New here? <a href="#" id="go-to-signup">Create an account</a></p>
-                <p><a href="#" id="go-to-forgot-pass">Forgot Password?</a></p>
+                <p>Don't have an account? <a href="#" id="go-to-signup">Create one for free</a></p>
             </div>
         </div>
     </div>
@@ -1796,14 +1799,14 @@ Thank you for using API Hub.
          SIGNUP VIEW
          ========================= -->
     <div id="signup-view" class="login-container" style="display: none;">
-        <div class="login-card" style="width: 450px;">
+        <div class="login-card" style="width: 480px;">
             <div class="icon">🚀</div>
             <h2>Create Account</h2>
             <p>Get started with API Hub today.</p>
 
             <form id="signup-form" autocomplete="off">
                 <div id="signup-fields">
-                    <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 15px; display: grid;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                         <div>
                             <label style="margin-top: 0;">First Name</label>
                             <input type="text" id="reg-fname" placeholder="John" required>
@@ -1833,25 +1836,25 @@ Thank you for using API Hub.
 
                 <!-- Signup OTP Section -->
                 <div id="otp-section"
-                    style="display: none; border-top: 1px solid #f1f5f9; margin-top: 20px; padding-top: 20px;">
+                    style="display: none; border-top: 1px solid rgba(255,255,255,0.05); margin-top: 24px; padding-top: 24px;">
                     <label>Verify Email</label>
-                    <p style="font-size: 12px; color: #64748b; margin-top: -8px; margin-bottom: 12px;">We've sent a code
+                    <p style="font-size: 13px; color: #94a3b8; margin-top: 4px; margin-bottom: 20px;">We've sent a code
                         to your email.</p>
-                    <input type="text" id="reg-otp" placeholder="6-digit code" maxlength="6"
-                        style="text-align: center; font-size: 24px; letter-spacing: 4px; font-weight: 700;">
+                    <input type="text" id="reg-otp" placeholder="000000" maxlength="6"
+                        style="text-align: center; font-size: 28px; letter-spacing: 8px; font-weight: 700; background: rgba(15, 23, 42, 0.8);">
 
-                    <div style="font-size: 13px; margin-top: 10px; text-align: center;">
+                    <div style="font-size: 14px; margin-top: 20px; text-align: center; color: #64748b;">
                         <span id="signup-timer-wrapper">Resend in <strong id="otp-timer">30</strong>s</span>
-                        <a href="#" id="resend-otp-btn" style="display: none; color: #2563eb; font-weight: 600;">Resend
+                        <a href="#" id="resend-otp-btn" style="display: none; color: #60a5fa; font-weight: 600;">Resend
                             OTP</a>
                     </div>
                 </div>
 
-                <button type="submit" id="signup-btn" style="margin-top: 25px;">Send OTP</button>
+                <button type="submit" id="signup-btn">Send OTP</button>
             </form>
 
             <div class="links">
-                <p>Already have an account? <a href="#" id="go-to-login">Sign In</a></p>
+                <p>Already have an account? <a href="#" id="go-to-login">Sign in</a></p>
             </div>
         </div>
     </div>

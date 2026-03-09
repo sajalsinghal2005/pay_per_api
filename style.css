@@ -44,7 +44,11 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    background: radial-gradient(circle at top left, #1e293b, #0f172a);
+    background: radial-gradient(circle at top left, #0f172a, #020617);
+    background-image:
+        radial-gradient(at 0% 0%, hsla(217, 100%, 13%, 1) 0, transparent 50%),
+        radial-gradient(at 50% 0%, hsla(222, 47%, 11%, 1) 0, transparent 50%),
+        radial-gradient(at 100% 0%, hsla(217, 100%, 13%, 1) 0, transparent 50%);
     position: fixed;
     top: 0;
     left: 0;
@@ -52,92 +56,118 @@ body {
 }
 
 .login-card {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    width: 420px;
-    padding: 45px;
-    border-radius: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    background: rgba(30, 41, 59, 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    width: 440px;
+    padding: 48px;
+    border-radius: 32px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
     text-align: center;
     color: white;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.login-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.7);
 }
 
 .icon {
-    width: 80px;
-    height: 80px;
+    width: 64px;
+    height: 64px;
     background: linear-gradient(135deg, #3b82f6, #2563eb);
-    border-radius: 20px;
-    margin: 0 auto 25px;
+    border-radius: 18px;
+    margin: 0 auto 28px;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 32px;
+    font-size: 28px;
     color: white;
-    transform: rotate(-10deg);
-    box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3);
+    transform: rotate(-6deg);
+    box-shadow: 0 12px 24px rgba(37, 99, 235, 0.3);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.login-card:hover .icon {
+    transform: rotate(0deg) scale(1.1);
 }
 
 .login-card h2 {
     margin-bottom: 8px;
-    font-size: 28px;
-    letter-spacing: -0.5px;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    background: linear-gradient(to bottom, #fff, #94a3b8);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 .login-card p {
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 14px;
-    margin-bottom: 30px;
+    color: #94a3b8;
+    font-size: 15px;
+    margin-bottom: 32px;
+    line-height: 1.5;
 }
 
 .login-card label {
     display: block;
     text-align: left;
-    margin-top: 20px;
-    font-size: 13px;
+    margin-top: 24px;
+    font-size: 14px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.8);
+    color: #e2e8f0;
 }
 
 .login-card input {
     width: 100%;
-    padding: 14px;
-    margin-top: 8px;
-    border-radius: 12px;
+    padding: 14px 18px;
+    margin-top: 10px;
+    border-radius: 14px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(15, 23, 42, 0.6);
     font-size: 15px;
     color: white;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
+}
+
+.login-card input::placeholder {
+    color: #475569;
 }
 
 .login-card input:focus {
     outline: none;
     border-color: #3b82f6;
-    background: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+    background: rgba(15, 23, 42, 0.8);
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+    transform: translateY(-1px);
 }
 
 .login-card button {
     width: 100%;
-    padding: 14px;
-    margin-top: 30px;
+    padding: 15px;
+    margin-top: 36px;
     border: none;
-    border-radius: 12px;
+    border-radius: 14px;
     background: linear-gradient(135deg, #3b82f6, #2563eb);
     color: white;
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+    box-shadow: 0 8px 16px rgba(37, 99, 235, 0.25);
 }
 
 .login-card button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 12px 20px rgba(37, 99, 235, 0.5);
+    box-shadow: 0 12px 24px rgba(37, 99, 235, 0.4);
     filter: brightness(1.1);
+}
+
+.login-card button:active {
+    transform: translateY(0);
 }
 
 /* Password Strength Indicator */
@@ -164,18 +194,27 @@ body {
 }
 
 .links {
-    margin-top: 20px;
+    margin-top: 32px;
     font-size: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 24px;
 }
 
 .links a {
-    color: #3b5bdb;
+    color: #60a5fa;
     text-decoration: none;
-    font-weight: bold;
+    font-weight: 600;
+    transition: color 0.2s ease;
+}
+
+.links a:hover {
+    color: #3b82f6;
+    text-decoration: underline;
 }
 
 .links p {
-    margin-top: 8px;
+    margin-top: 10px;
+    color: #64748b;
 }
 
 
