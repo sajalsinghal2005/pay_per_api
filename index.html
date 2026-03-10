@@ -40,6 +40,17 @@
             toast.onclick = () => toast.remove();
         };
 
+        window.togglePasswordVisibility = (inputId, btn) => {
+            const input = document.getElementById(inputId);
+            if (input.type === 'password') {
+                input.type = 'text';
+                btn.textContent = '🔒'; // Swaps eye to lock
+            } else {
+                input.type = 'password';
+                btn.textContent = '👁';
+            }
+        };
+
         window.togglePurchaseModal = (show, apiData = null) => {
             const modal = document.getElementById('purchase-confirm-modal');
             if (show && apiData) {
@@ -2597,10 +2608,14 @@ Thank you for using API Hub.
                             </div>
                             <div>
                                 <label>New Password</label>
-                                <input type="password" id="set-pass" placeholder="••••••••">
+                                <div class="password-input-wrapper">
+                                    <input type="password" id="set-pass" placeholder="••••••••">
+                                    <button type="button" class="eye-toggle"
+                                        onclick="togglePasswordVisibility('set-pass', this)">👁</button>
+                                </div>
                             </div>
                         </div>
-                        <button onclick="saveAccountChanges()">Save Account Changes</button>
+                        <button class="prominent-btn" onclick="saveAccountChanges()">Save Account Changes</button>
                     </div>
 
                     <!-- API Keys -->
@@ -2608,12 +2623,13 @@ Thank you for using API Hub.
                         <h3>API Credentials</h3>
                         <label>Primary API Key</label>
                         <div class="api-key-box">
-                            <span id="set-apiKey" style="font-family: monospace;">•••••••••••••••••••••</span>
+                            <span id="set-apiKey"
+                                style="font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 14px;">•••••••••••••••••••••</span>
                             <div>
                                 <button class="small" id="toggle-key-btn"
-                                    onclick="toggleApiKeyVisibility('settings')">Show</button>
-                                <button class="small" onclick="copyApiKey('settings')">Copy</button>
-                                <button class="small danger" onclick="regenerateApiKey()">Regenerate</button>
+                                    onclick="toggleApiKeyVisibility('settings')">👁 Show</button>
+                                <button class="small" onclick="copyApiKey('settings')">📋 Copy</button>
+                                <button class="small danger" onclick="regenerateApiKey()">🔄 Regenerate</button>
                             </div>
                         </div>
                     </div>
@@ -2624,13 +2640,29 @@ Thank you for using API Hub.
                         <div class="form-grid">
                             <div>
                                 <label>Requests Per Minute</label>
-                                <input type="number" id="set-rpm-limit" placeholder="120" disabled
-                                    title="Contact admin to change limits">
+                                <div class="usage-container">
+                                    <div class="usage-info">
+                                        <span>Current: 120 / 200</span>
+                                        <span>60%</span>
+                                    </div>
+                                    <div class="progress-bar-bg">
+                                        <div class="progress-bar-fill" style="width: 60%;"></div>
+                                    </div>
+                                </div>
                             </div>
                             <div>
-                                <label>Daily Limit</label>
-                                <input type="number" id="set-daily-limit" placeholder="10000" disabled
-                                    title="Contact admin to change limits">
+                                <label>Daily Quota</label>
+                                <div class="usage-container">
+                                    <div class="usage-info">
+                                        <span>Used: 8.4k / 10k</span>
+                                        <span>84%</span>
+                                    </div>
+                                    <div class="progress-bar-bg">
+                                        <div class="progress-bar-fill"
+                                            style="width: 84%; background: linear-gradient(to right, #f59e0b, #fbbf24);">
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <p style="font-size: 12px; color: #64748b; margin-top: 5px;">* Limits are managed by system
