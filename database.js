@@ -55,6 +55,7 @@ db.serialize(() => {
             category TEXT,
             price INTEGER DEFAULT 0,
             image TEXT,
+            badge TEXT,
             status TEXT DEFAULT 'active'
         )
     `);
@@ -67,6 +68,7 @@ db.serialize(() => {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             api_id INTEGER,
+            api_key TEXT,
             status TEXT DEFAULT 'active',
             purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, api_id),
@@ -138,17 +140,18 @@ db.serialize(() => {
 
             const stmt = db.prepare(`
                 INSERT INTO apis
-                (name,provider,description,category,price,image,status)
-                VALUES(?,?,?,?,?,?,?)
+                (name,provider,description,category,price,image,badge,status)
+                VALUES(?,?,?,?,?,?,?,?)
             `);
 
             stmt.run(
                 'MapBox API',
                 'MapBox',
                 'High-performance vector maps and geocoding',
-                'Mapping',
+                'Maps',
                 100,
                 'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?q=80&w=600',
+                'Popular',
                 'active'
             );
 
@@ -156,9 +159,10 @@ db.serialize(() => {
                 'WeatherCast API',
                 'AtmoSphere',
                 'Real-time Weather Data',
-                'Data',
+                'Weather',
                 50,
                 'https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?q=80&w=600',
+                'Trending',
                 'active'
             );
 
@@ -166,9 +170,10 @@ db.serialize(() => {
                 'PayStack API',
                 'FinSecure',
                 'Secure Payment Gateway',
-                'Finance',
+                'Payments',
                 200,
                 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -176,9 +181,10 @@ db.serialize(() => {
                 'CloudStore API',
                 'InfraCloud',
                 'Object storage and file management',
-                'Cloud',
+                'Storage',
                 150,
                 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=600',
+                'New',
                 'active'
             );
 
@@ -189,6 +195,7 @@ db.serialize(() => {
                 'Analytics',
                 250,
                 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=600',
+                'Trending',
                 'active'
             );
 

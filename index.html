@@ -6,1164 +6,1283 @@
     <title>API Hub</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const API_BASE_URL = 'http://localhost:3001';
+</head>
 
-            // Global Chart Instances to prevent reuse errors
-            let userTrafficChartInstance = null;
-            let userUsageWeekChartInstance = null;
-            let userResponseTimeChartInstance = null;
-            let userErrorDistChartInstance = null;
+<!-- SCRIPTS -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const API_BASE_URL = 'http://localhost:3001';
 
-            // --- UI Helper Functions ---
-            window.showToast = (message, type = 'success') => {
-                const container = document.getElementById('toast-container');
-                const toast = document.createElement('div');
-                toast.className = `toast ${type}`;
-                toast.innerHTML = `
+        // Global Chart Instances to prevent reuse errors
+        let userTrafficChartInstance = null;
+        let userUsageWeekChartInstance = null;
+        let userResponseTimeChartInstance = null;
+        let userErrorDistChartInstance = null;
+
+        // --- UI Helper Functions ---
+        window.showToast = (message, type = 'success') => {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
                     <span style="font-size: 18px;">${type === 'success' ? '✅' : '❌'}</span>
                     <span style="font-weight: 500;">${message}</span>
                 `;
-                container.appendChild(toast);
+            container.appendChild(toast);
 
-                // Auto remove
-                setTimeout(() => {
-                    toast.classList.add('fade-out');
-                    setTimeout(() => toast.remove(), 300);
-                }, 4000);
+            // Auto remove
+            setTimeout(() => {
+                toast.classList.add('fade-out');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
 
-                toast.onclick = () => toast.remove();
-            };
+            toast.onclick = () => toast.remove();
+        };
 
-            window.togglePurchaseModal = (show, apiData = null) => {
-                const modal = document.getElementById('purchase-confirm-modal');
-                if (show && apiData) {
-                    document.getElementById('modal-api-name').textContent = apiData.name;
-                    document.getElementById('modal-api-price').textContent = `₹${apiData.price}`;
-                    document.getElementById('modal-api-img').src = apiData.image || 'https://via.placeholder.com/300';
-                    window.pendingPurchaseApiId = apiData.id;
-                    modal.classList.add('active');
-                } else {
-                    modal.classList.remove('active');
-                }
-            };
+        window.togglePurchaseModal = (show, apiData = null) => {
+            const modal = document.getElementById('purchase-confirm-modal');
+            if (show && apiData) {
+                document.getElementById('modal-api-name').textContent = apiData.name;
+                document.getElementById('modal-api-price').textContent = `₹${apiData.price}`;
+                document.getElementById('modal-api-img').src = apiData.image || 'https://via.placeholder.com/300';
+                window.pendingPurchaseApiId = apiData.id;
+                modal.classList.add('active');
+            } else {
+                modal.classList.remove('active');
+            }
+        };
 
 
-            window.suspendUser = async (id) => {
-                await fetch(API_BASE_URL + '/api/admin/suspend', {
+        window.suspendUser = async (id) => {
+            await fetch(API_BASE_URL + '/api/admin/suspend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: id })
+            });
+            loadAdminDashboard();
+        };
+
+        window.activateUser = async (id) => {
+            await fetch(API_BASE_URL + '/api/admin/activate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: id })
+            });
+            loadAdminDashboard();
+        };
+
+        window.mockAction = (actionName) => {
+            alert(actionName + " functionality will be implemented in the next major release!");
+        };
+
+        // Admin Functions for Global Config & APIs
+        window.applyGlobalConfig = async () => {
+            const limit = document.getElementById('admin-rate-limit').value;
+            const cap = document.getElementById('admin-traffic-cap').value;
+            const mode = document.getElementById('admin-maintenance-mode').checked;
+
+            try {
+                const res = await fetch(API_BASE_URL + '/api/admin/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: id })
+                    body: JSON.stringify({ userRateLimit: limit, globalTrafficCap: cap, maintenanceMode: mode })
                 });
-                loadAdminDashboard();
-            };
+                const data = await res.json();
+                if (data.success) showToast("Configuration Saved Successfully!");
+                else showToast("Failed to save config: " + data.message, "error");
+            } catch (err) {
+                showToast("Error saving configuration.", "error");
+            }
+        };
 
-            window.activateUser = async (id) => {
-                await fetch(API_BASE_URL + '/api/admin/activate', {
+        window.addNewApi = async () => {
+            const name = prompt("Enter API Name:");
+            if (!name) return;
+            const provider = prompt("Enter Provider:", "DefaultProvider");
+            const description = prompt("Enter Description:");
+            const category = prompt("Enter Category (e.g., Data, Mapping):", "General");
+            const price = prompt("Enter Price (credits):", "100");
+
+            try {
+                const res = await fetch(API_BASE_URL + '/api/admin/apis', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: id })
+                    body: JSON.stringify({ name, provider, description, category, price: parseInt(price) || 0, image: 'https://via.placeholder.com/300' })
                 });
-                loadAdminDashboard();
-            };
-
-            window.mockAction = (actionName) => {
-                alert(actionName + " functionality will be implemented in the next major release!");
-            };
-
-            // Admin Functions for Global Config & APIs
-            window.applyGlobalConfig = async () => {
-                const limit = document.getElementById('admin-rate-limit').value;
-                const cap = document.getElementById('admin-traffic-cap').value;
-                const mode = document.getElementById('admin-maintenance-mode').checked;
-
-                try {
-                    const res = await fetch(API_BASE_URL + '/api/admin/config', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userRateLimit: limit, globalTrafficCap: cap, maintenanceMode: mode })
-                    });
-                    const data = await res.json();
-                    if (data.success) showToast("Configuration Saved Successfully!");
-                    else showToast("Failed to save config: " + data.message, "error");
-                } catch (err) {
-                    showToast("Error saving configuration.", "error");
-                }
-            };
-
-            window.addNewApi = async () => {
-                const name = prompt("Enter API Name:");
-                if (!name) return;
-                const provider = prompt("Enter Provider:", "DefaultProvider");
-                const description = prompt("Enter Description:");
-                const category = prompt("Enter Category (e.g., Data, Mapping):", "General");
-                const price = prompt("Enter Price (credits):", "100");
-
-                try {
-                    const res = await fetch(API_BASE_URL + '/api/admin/apis', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, provider, description, category, price: parseInt(price) || 0, image: 'https://via.placeholder.com/300' })
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        showToast("API Added!");
-                        loadAdminDashboard(); // Refresh lists
-                    } else {
-                        showToast("Failed: " + data.message, "error");
-                    }
-                } catch (err) {
-                    showToast("Error adding API.", "error");
-                }
-            };
-
-            window.editApi = async (id, oldName, oldPrice) => {
-                const name = prompt("Edit API Name:", oldName);
-                if (!name) return;
-                const price = prompt("Edit Price (credits):", oldPrice);
-
-                try {
-                    // Quick PUT, in reality you'd prompt all fields or use a modal.
-                    const res = await fetch(API_BASE_URL + `/api/admin/apis/${id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, provider: 'Updated', description: 'Updated Description', category: 'Updated', price: parseInt(price) || 0, image: 'https://via.placeholder.com/300' })
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        showToast("API Updated!");
-                        loadAdminDashboard();
-                    } else {
-                        showToast("Failed: " + data.message, "error");
-                    }
-                } catch (err) {
-                    showToast("Error updating API.", "error");
-                }
-            }
-
-            window.toggleApiStatus = async (id, currentStatus) => {
-                const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
-                try {
-                    const res = await fetch(API_BASE_URL + `/api/admin/apis/${id}/status`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status: newStatus })
-                    });
-                    if ((await res.json()).success) {
-                        showToast("API Status Toggled!");
-                        loadAdminDashboard();
-                    }
-                } catch (err) {
-                    showToast("Error changing API status.", "error");
-                }
-            }
-
-            // --- User Settings Logic ---
-            window.loadUserSettings = async () => {
-                if (!currentUser) return;
-                try {
-                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`);
-                    const data = await res.json();
-                    if (data.success) {
-                        const s = data.settings;
-                        document.getElementById('set-fullname').value = `${s.firstName || ''} ${s.lastName || ''}`.trim();
-                        document.getElementById('set-email').value = s.email || '';
-                        document.getElementById('set-org').value = s.organization || '';
-                        document.getElementById('set-apiKey').textContent = s.apiKey || 'No key generated';
-                        document.getElementById('set-autoRecharge').classList.toggle('active', s.autoRecharge === 1);
-                        document.getElementById('set-lowCredit').classList.toggle('active', s.lowCreditNotifications === 1);
-                        document.getElementById('set-timeout').value = s.sessionTimeout || 30;
-                        document.getElementById('set-2fa').classList.toggle('active', s.twoFactorAuth === 1);
-
-                        // Mask API key by default
-                        window.settingsApiKeyVisible = false;
-                        document.getElementById('set-apiKey').textContent = '•••••••••••••••••••••';
-                    }
-                } catch (err) {
-                    console.error("Error loading settings:", err);
-                }
-            };
-
-            window.saveAccountChanges = async () => {
-                const fullName = document.getElementById('set-fullname').value.trim();
-                const email = document.getElementById('set-email').value;
-                const organization = document.getElementById('set-org').value;
-                const password = document.getElementById('set-pass').value;
-
-                let firstName = fullName, lastName = '';
-                if (fullName.includes(' ')) {
-                    const parts = fullName.split(' ');
-                    firstName = parts[0];
-                    lastName = parts.slice(1).join(' ');
-                }
-
-                try {
-                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ firstName, lastName, email, organization, password })
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        showToast("Account changes saved!");
-                        document.getElementById('set-pass').value = ''; // Clear password field
-                    } else {
-                        showToast("Failed: " + data.message, "error");
-                    }
-                } catch (err) {
-                    showToast("Error saving account changes.", "error");
-                }
-            };
-
-            window.updatePreferences = async () => {
-                const autoRecharge = document.getElementById('set-autoRecharge').classList.contains('active');
-                const lowCreditNotifications = document.getElementById('set-lowCredit').classList.contains('active');
-                const sessionTimeout = document.getElementById('set-timeout').value;
-                const twoFactorAuth = document.getElementById('set-2fa').classList.contains('active');
-
-                // Get current text values to avoid overwriting with empty
-                const fullName = document.getElementById('set-fullname').value.trim();
-                const email = document.getElementById('set-email').value;
-                const organization = document.getElementById('set-org').value;
-
-                let firstName = fullName, lastName = '';
-                if (fullName.includes(' ')) {
-                    const parts = fullName.split(' ');
-                    firstName = parts[0];
-                    lastName = parts.slice(1).join(' ');
-                }
-
-                try {
-                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ firstName, lastName, email, organization, autoRecharge, lowCreditNotifications, sessionTimeout, twoFactorAuth })
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        showToast("Preferences updated!");
-                    } else {
-                        showToast("Failed: " + data.message, "error");
-                    }
-                } catch (err) {
-                    showToast("Error updating preferences.", "error");
-                }
-            };
-
-            window.togglePreference = (id) => {
-                document.getElementById(id).classList.toggle('active');
-            };
-
-            window.toggleApiKeyVisibility = (context = 'settings') => {
-                const isSettings = context === 'settings';
-                const elId = isSettings ? 'set-apiKey' : 'dashboard-apiKey';
-                const btnId = isSettings ? 'toggle-key-btn' : 'dashboard-toggle-key-btn';
-                const visibleVar = isSettings ? 'settingsApiKeyVisible' : 'dashboardApiKeyVisible';
-
-                const el = document.getElementById(elId);
-                const btn = document.getElementById(btnId);
-
-                if (window[visibleVar]) {
-                    el.textContent = '•••••••••••••••••••••';
-                    btn.textContent = 'Show';
+                const data = await res.json();
+                if (data.success) {
+                    showToast("API Added!");
+                    loadAdminDashboard(); // Refresh lists
                 } else {
-                    // Fetch real key if not cached or just use a state
-                    fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`)
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.success) {
-                                el.textContent = data.settings.apiKey;
-                            }
-                        });
-                    btn.textContent = 'Hide';
+                    showToast("Failed: " + data.message, "error");
                 }
-                window[visibleVar] = !window[visibleVar];
-            };
+            } catch (err) {
+                showToast("Error adding API.", "error");
+            }
+        };
 
-            window.copyApiKey = (context = 'settings') => {
+        window.editApi = async (id, oldName, oldPrice) => {
+            const name = prompt("Edit API Name:", oldName);
+            if (!name) return;
+            const price = prompt("Edit Price (credits):", oldPrice);
+
+            try {
+                // Quick PUT, in reality you'd prompt all fields or use a modal.
+                const res = await fetch(API_BASE_URL + `/api/admin/apis/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, provider: 'Updated', description: 'Updated Description', category: 'Updated', price: parseInt(price) || 0, image: 'https://via.placeholder.com/300' })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast("API Updated!");
+                    loadAdminDashboard();
+                } else {
+                    showToast("Failed: " + data.message, "error");
+                }
+            } catch (err) {
+                showToast("Error updating API.", "error");
+            }
+        }
+
+        window.toggleApiStatus = async (id, currentStatus) => {
+            const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
+            try {
+                const res = await fetch(API_BASE_URL + `/api/admin/apis/${id}/status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                if ((await res.json()).success) {
+                    showToast("API Status Toggled!");
+                    loadAdminDashboard();
+                }
+            } catch (err) {
+                showToast("Error changing API status.", "error");
+            }
+        }
+
+        // --- User Settings Logic ---
+        window.loadUserSettings = async () => {
+            if (!currentUser) return;
+            try {
+                const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`);
+                const data = await res.json();
+                if (data.success) {
+                    const s = data.settings;
+                    document.getElementById('set-fullname').value = `${s.firstName || ''} ${s.lastName || ''}`.trim();
+                    document.getElementById('set-email').value = s.email || '';
+                    document.getElementById('set-org').value = s.organization || '';
+                    document.getElementById('set-apiKey').textContent = s.apiKey || 'No key generated';
+                    document.getElementById('set-autoRecharge').classList.toggle('active', s.autoRecharge === 1);
+                    document.getElementById('set-lowCredit').classList.toggle('active', s.lowCreditNotifications === 1);
+                    document.getElementById('set-timeout').value = s.sessionTimeout || 30;
+                    document.getElementById('set-2fa').classList.toggle('active', s.twoFactorAuth === 1);
+
+                    // Mask API key by default
+                    window.settingsApiKeyVisible = false;
+                    document.getElementById('set-apiKey').textContent = '•••••••••••••••••••••';
+                }
+            } catch (err) {
+                console.error("Error loading settings:", err);
+            }
+        };
+
+        window.saveAccountChanges = async () => {
+            const fullName = document.getElementById('set-fullname').value.trim();
+            const email = document.getElementById('set-email').value;
+            const organization = document.getElementById('set-org').value;
+            const password = document.getElementById('set-pass').value;
+
+            let firstName = fullName, lastName = '';
+            if (fullName.includes(' ')) {
+                const parts = fullName.split(' ');
+                firstName = parts[0];
+                lastName = parts.slice(1).join(' ');
+            }
+
+            try {
+                const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ firstName, lastName, email, organization, password })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast("Account changes saved!");
+                    document.getElementById('set-pass').value = ''; // Clear password field
+                } else {
+                    showToast("Failed: " + data.message, "error");
+                }
+            } catch (err) {
+                showToast("Error saving account changes.", "error");
+            }
+        };
+
+        window.updatePreferences = async () => {
+            const autoRecharge = document.getElementById('set-autoRecharge').classList.contains('active');
+            const lowCreditNotifications = document.getElementById('set-lowCredit').classList.contains('active');
+            const sessionTimeout = document.getElementById('set-timeout').value;
+            const twoFactorAuth = document.getElementById('set-2fa').classList.contains('active');
+
+            // Get current text values to avoid overwriting with empty
+            const fullName = document.getElementById('set-fullname').value.trim();
+            const email = document.getElementById('set-email').value;
+            const organization = document.getElementById('set-org').value;
+
+            let firstName = fullName, lastName = '';
+            if (fullName.includes(' ')) {
+                const parts = fullName.split(' ');
+                firstName = parts[0];
+                lastName = parts.slice(1).join(' ');
+            }
+
+            try {
+                const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ firstName, lastName, email, organization, autoRecharge, lowCreditNotifications, sessionTimeout, twoFactorAuth })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast("Preferences updated!");
+                } else {
+                    showToast("Failed: " + data.message, "error");
+                }
+            } catch (err) {
+                showToast("Error updating preferences.", "error");
+            }
+        };
+
+        window.togglePreference = (id) => {
+            document.getElementById(id).classList.toggle('active');
+        };
+
+        window.toggleApiKeyVisibility = (context = 'settings') => {
+            const isSettings = context === 'settings';
+            const elId = isSettings ? 'set-apiKey' : 'dashboard-apiKey';
+            const btnId = isSettings ? 'toggle-key-btn' : 'dashboard-toggle-key-btn';
+            const visibleVar = isSettings ? 'settingsApiKeyVisible' : 'dashboardApiKeyVisible';
+
+            const el = document.getElementById(elId);
+            const btn = document.getElementById(btnId);
+
+            if (window[visibleVar]) {
+                el.textContent = '•••••••••••••••••••••';
+                btn.textContent = 'Show';
+            } else {
+                // Fetch real key if not cached or just use a state
                 fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`)
                     .then(res => res.json())
                     .then(data => {
                         if (data.success) {
-                            navigator.clipboard.writeText(data.settings.apiKey);
-                            showToast("API Key copied to clipboard!");
+                            el.textContent = data.settings.apiKey;
                         }
                     });
-            };
+                btn.textContent = 'Hide';
+            }
+            window[visibleVar] = !window[visibleVar];
+        };
 
-            window.regenerateApiKey = async () => {
-                if (!confirm("Are you sure? Your old API key will stop working immediately.")) return;
-                try {
-                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/apiKey/regenerate`, { method: 'POST' });
-                    const data = await res.json();
+        window.copyApiKey = (context = 'settings') => {
+            fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`)
+                .then(res => res.json())
+                .then(data => {
                     if (data.success) {
-                        showToast("New API key generated!");
-                        const key = data.apiKey;
-                        if (document.getElementById('set-apiKey')) document.getElementById('set-apiKey').textContent = key;
-                        if (document.getElementById('dashboard-apiKey')) document.getElementById('dashboard-apiKey').textContent = key;
-                        window.settingsApiKeyVisible = true;
-                        window.dashboardApiKeyVisible = true;
-                        if (document.getElementById('toggle-key-btn')) document.getElementById('toggle-key-btn').textContent = 'Hide';
-                        if (document.getElementById('dashboard-toggle-key-btn')) document.getElementById('dashboard-toggle-key-btn').textContent = 'Hide';
+                        navigator.clipboard.writeText(data.settings.apiKey);
+                        showToast("API Key copied to clipboard!");
                     }
-                } catch (err) {
-                    showToast("Error regenerating API key.", "error");
-                }
-            };
-
-            // ============================
-            // 1. STATE MANAGEMENT
-            // ============================
-            let currentUser = null;
-
-            // ============================
-            // 2. DOM ELEMENTS
-            // ============================
-            const loginView = document.getElementById('login-view');
-            const signupView = document.getElementById('signup-view');
-            const forgotPassView = document.getElementById('forgot-pass-view');
-            const resetPassView = document.getElementById('reset-pass-view');
-            const appView = document.getElementById('app-view');
-
-            const loginForm = document.getElementById('login-form');
-            const signupForm = document.getElementById('signup-form');
-            const forgotPassForm = document.getElementById('forgot-pass-form');
-            const resetPassForm = document.getElementById('reset-pass-form');
-
-            const toggleSignupBtn = document.getElementById('go-to-signup');
-            const toggleLoginBtn = document.getElementById('go-to-login');
-            const backToLoginForgotBtn = document.getElementById('back-to-login-forgot');
-            const backToLoginResetBtn = document.getElementById('back-to-login-reset');
-            const goToForgotPassBtn = document.getElementById('go-to-forgot-pass');
-
-            // ============================
-            // 3. AUTHENTICATION LOGIC
-            // ============================
-
-            toggleSignupBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                loginView.style.display = 'none';
-                signupView.style.display = 'flex';
-            });
-
-            toggleLoginBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                signupView.style.display = 'none';
-                loginView.style.display = 'flex';
-            });
-
-            goToForgotPassBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                loginView.style.display = 'none';
-                forgotPassView.style.display = 'flex';
-            });
-            const backToLoginBtn = document.getElementById('back-to-login');
-            if (backToLoginBtn) {
-                backToLoginBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    // otpView is removed, so this shouldn't be needed
-                    loginView.style.display = 'flex';
                 });
+        };
+
+        window.regenerateApiKey = async () => {
+            if (!confirm("Are you sure? Your old API key will stop working immediately.")) return;
+            try {
+                const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/apiKey/regenerate`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast("New API key generated!");
+                    const key = data.apiKey;
+                    if (document.getElementById('set-apiKey')) document.getElementById('set-apiKey').textContent = key;
+                    if (document.getElementById('dashboard-apiKey')) document.getElementById('dashboard-apiKey').textContent = key;
+                    window.settingsApiKeyVisible = true;
+                    window.dashboardApiKeyVisible = true;
+                    if (document.getElementById('toggle-key-btn')) document.getElementById('toggle-key-btn').textContent = 'Hide';
+                    if (document.getElementById('dashboard-toggle-key-btn')) document.getElementById('dashboard-toggle-key-btn').textContent = 'Hide';
+                }
+            } catch (err) {
+                showToast("Error regenerating API key.", "error");
             }
+        };
 
-            backToLoginForgotBtn.addEventListener('click', (e) => {
+        // ============================
+        // 1. STATE MANAGEMENT
+        // ============================
+        let currentUser = null;
+
+        // ============================
+        // 2. DOM ELEMENTS
+        // ============================
+        const loginView = document.getElementById('login-view');
+        const signupView = document.getElementById('signup-view');
+        const forgotPassView = document.getElementById('forgot-pass-view');
+        const resetPassView = document.getElementById('reset-pass-view');
+        const appView = document.getElementById('app-view');
+
+        const loginForm = document.getElementById('login-form');
+        const signupForm = document.getElementById('signup-form');
+        const forgotPassForm = document.getElementById('forgot-pass-form');
+        const resetPassForm = document.getElementById('reset-pass-form');
+
+        const toggleSignupBtn = document.getElementById('go-to-signup');
+        const toggleLoginBtn = document.getElementById('go-to-login');
+        const backToLoginForgotBtn = document.getElementById('back-to-login-forgot');
+        const backToLoginResetBtn = document.getElementById('back-to-login-reset');
+        const goToForgotPassBtn = document.getElementById('go-to-forgot-pass');
+
+        // ============================
+        // 3. AUTHENTICATION LOGIC
+        // ============================
+
+        toggleSignupBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            loginView.style.display = 'none';
+            signupView.style.display = 'flex';
+        });
+
+        toggleLoginBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            signupView.style.display = 'none';
+            loginView.style.display = 'flex';
+        });
+
+        goToForgotPassBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            loginView.style.display = 'none';
+            forgotPassView.style.display = 'flex';
+        });
+        const backToLoginBtn = document.getElementById('back-to-login');
+        if (backToLoginBtn) {
+            backToLoginBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                forgotPassView.style.display = 'none';
+                // otpView is removed, so this shouldn't be needed
                 loginView.style.display = 'flex';
             });
+        }
 
-            backToLoginResetBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                resetPassView.style.display = 'none';
-                loginView.style.display = 'flex';
-            });
+        backToLoginForgotBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            forgotPassView.style.display = 'none';
+            loginView.style.display = 'flex';
+        });
 
-            // Password Strength Real-time Feedback
-            const regPass = document.getElementById('reg-pass');
-            const strengthBar = document.getElementById('strength-bar');
-            const strengthText = document.getElementById('strength-text');
+        backToLoginResetBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            resetPassView.style.display = 'none';
+            loginView.style.display = 'flex';
+        });
 
-            regPass.addEventListener('input', () => {
-                const pass = regPass.value;
-                let strength = 0;
-                if (pass.length === 0) {
-                    strengthBar.style.width = '0%';
-                    strengthText.textContent = 'Use 8+ chars, mixed case & symbols';
-                    return;
-                }
-                if (pass.length >= 8) strength += 25;
-                if (/[A-Z]/.test(pass)) strength += 25;
-                if (/[0-9]/.test(pass)) strength += 25;
-                if (/[^A-Za-z0-9]/.test(pass)) strength += 25;
+        // Password Strength Real-time Feedback
+        const regPass = document.getElementById('reg-pass');
+        const strengthBar = document.getElementById('strength-bar');
+        const strengthText = document.getElementById('strength-text');
 
-                strengthBar.style.width = strength + '%';
-                if (strength < 50) {
-                    strengthBar.style.backgroundColor = '#ef4444';
-                    strengthText.textContent = 'Weak - Keep going...';
-                    strengthText.style.color = '#ef4444';
-                } else if (strength < 100) {
-                    strengthBar.style.backgroundColor = '#f59e0b';
-                    strengthText.textContent = 'Good - Add symbols or caps';
-                    strengthText.style.color = '#f59e0b';
-                } else {
-                    strengthBar.style.backgroundColor = '#10b981';
-                    strengthText.textContent = 'Strong - Perfect!';
-                    strengthText.style.color = '#10b981';
-                }
-            });
-
-            // Handle Signup
-            signupForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const fname = document.getElementById('reg-fname').value;
-                const lname = document.getElementById('reg-lname').value;
-                const email = document.getElementById('reg-email').value;
-                const contact = document.getElementById('reg-contact').value;
-                const pass = document.getElementById('reg-pass').value;
-                const confirmPass = document.getElementById('reg-confirm-pass').value;
-
-                if (!window.isOtpSent) {
-                    if (pass !== confirmPass) return showToast("Passwords do not match!", "error");
-                    if (pass.length < 8 || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) {
-                        return showToast("Password must be at least 8 chars, 1 uppercase, 1 number.", "error");
-                    }
-
-                    const signupBtn = document.getElementById('signup-btn');
-                    signupBtn.disabled = true;
-                    signupBtn.textContent = "Sending OTP...";
-
-                    try {
-                        const res = await fetch(API_BASE_URL + '/send-otp', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email })
-                        });
-                        const data = await res.json();
-                        if (data.success) {
-                            showToast("Verification code sent to email!");
-                            document.getElementById('signup-fields').style.display = 'none';
-                            document.getElementById('otp-section').style.display = 'block';
-                            signupBtn.disabled = false;
-                            signupBtn.textContent = "Verify & Create Account";
-                            window.isOtpSent = true;
-                            startResendTimer('signup');
-                        } else {
-                            showToast(data.message, "error");
-                            signupBtn.disabled = false;
-                            signupBtn.textContent = "Send OTP";
-                        }
-                    } catch (err) {
-                        showToast("Failed to connect to server", "error");
-                        signupBtn.disabled = false;
-                        signupBtn.textContent = "Send OTP";
-                    }
-                } else {
-                    const otp = document.getElementById('reg-otp').value;
-                    if (otp.length !== 6) return showToast("Enter 6-digit OTP", "error");
-
-                    try {
-                        const res = await fetch(API_BASE_URL + '/register', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ firstName: fname, lastName: lname, email, contact, password: pass, otp })
-                        });
-                        const data = await res.json();
-                        if (data.success) {
-                            showToast("Welcome! Registration successful.");
-                            signupForm.reset();
-                            window.isOtpSent = false;
-                            document.getElementById('signup-fields').style.display = 'block';
-                            document.getElementById('otp-section').style.display = 'none';
-                            signupView.style.display = 'none';
-                            loginView.style.display = 'flex';
-                        } else {
-                            showToast(data.message, "error");
-                        }
-                    } catch (err) {
-                        showToast("Registration failed", "error");
-                    }
-                }
-            });
-
-            // Resend Timer Logic
-            let timers = { signup: { val: 30, id: null }, login: { val: 30, id: null } };
-            function startResendTimer(type) {
-                const btn = type === 'signup' ? document.getElementById('resend-otp-btn') : document.getElementById('login-resend-otp-btn');
-                const timerSpan = type === 'signup' ? document.getElementById('otp-timer') : document.getElementById('login-otp-timer');
-                const wrapper = type === 'signup' ? document.getElementById('signup-timer-wrapper') : document.getElementById('login-timer-wrapper');
-
-                timers[type].val = 30;
-                btn.style.display = 'none';
-                wrapper.style.display = 'inline';
-
-                clearInterval(timers[type].id);
-                timers[type].id = setInterval(() => {
-                    timers[type].val--;
-                    timerSpan.textContent = timers[type].val;
-                    if (timers[type].val <= 0) {
-                        clearInterval(timers[type].id);
-                        btn.style.display = 'inline';
-                        wrapper.style.display = 'none';
-                    }
-                }, 1000);
+        regPass.addEventListener('input', () => {
+            const pass = regPass.value;
+            let strength = 0;
+            if (pass.length === 0) {
+                strengthBar.style.width = '0%';
+                strengthText.textContent = 'Use 8+ chars, mixed case & symbols';
+                return;
             }
+            if (pass.length >= 8) strength += 25;
+            if (/[A-Z]/.test(pass)) strength += 25;
+            if (/[0-9]/.test(pass)) strength += 25;
+            if (/[^A-Za-z0-9]/.test(pass)) strength += 25;
 
-            document.getElementById('resend-otp-btn').addEventListener('click', async (e) => {
-                e.preventDefault();
-                const email = document.getElementById('reg-email').value;
-                const res = await fetch(API_BASE_URL + '/send-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
-                });
-                if ((await res.json()).success) {
-                    showToast("Code resent!");
-                    startResendTimer('signup');
+            strengthBar.style.width = strength + '%';
+            if (strength < 50) {
+                strengthBar.style.backgroundColor = '#ef4444';
+                strengthText.textContent = 'Weak - Keep going...';
+                strengthText.style.color = '#ef4444';
+            } else if (strength < 100) {
+                strengthBar.style.backgroundColor = '#f59e0b';
+                strengthText.textContent = 'Good - Add symbols or caps';
+                strengthText.style.color = '#f59e0b';
+            } else {
+                strengthBar.style.backgroundColor = '#10b981';
+                strengthText.textContent = 'Strong - Perfect!';
+                strengthText.style.color = '#10b981';
+            }
+        });
+
+        // Handle Signup
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fname = document.getElementById('reg-fname').value;
+            const lname = document.getElementById('reg-lname').value;
+            const email = document.getElementById('reg-email').value;
+            const contact = document.getElementById('reg-contact').value;
+            const pass = document.getElementById('reg-pass').value;
+            const confirmPass = document.getElementById('reg-confirm-pass').value;
+
+            if (!window.isOtpSent) {
+                if (pass !== confirmPass) return showToast("Passwords do not match!", "error");
+                if (pass.length < 8 || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) {
+                    return showToast("Password must be at least 8 chars, 1 uppercase, 1 number.", "error");
                 }
-            });
 
-            document.getElementById('login-resend-otp-btn').addEventListener('click', async (e) => {
-                e.preventDefault();
-                const email = document.getElementById('login-email').value;
-                const res = await fetch(API_BASE_URL + '/send-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
-                });
-                if ((await res.json()).success) {
-                    showToast("Code resent!");
-                    startResendTimer('login');
-                }
-            });
-
-            // Handle Login
-            loginForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const email = document.getElementById('login-email').value;
-                const password = document.getElementById('login-pass').value;
-
-                if (!window.isLoginOtpSent) {
-                    const loginBtn = document.getElementById('login-btn');
-                    loginBtn.disabled = true;
-                    loginBtn.textContent = "Checking...";
-
-                    try {
-                        const res = await fetch(API_BASE_URL + '/login', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email, password })
-                        });
-                        const data = await res.json();
-                        if (data.success && data.requireOtp) {
-                            // Stage 1 pass, send OTP
-                            await fetch(API_BASE_URL + '/send-otp', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ email })
-                            });
-                            showToast("Credentials verified. Check email for OTP.");
-                            document.getElementById('login-fields').style.display = 'none';
-                            document.getElementById('login-otp-section').style.display = 'block';
-                            loginBtn.disabled = false;
-                            loginBtn.textContent = "Confirm Login";
-                            window.isLoginOtpSent = true;
-                            startResendTimer('login');
-                        } else {
-                            showToast(data.message, "error");
-                            loginBtn.disabled = false;
-                            loginBtn.textContent = "Sign In";
-                        }
-                    } catch (err) {
-                        showToast("Server error", "error");
-                        loginBtn.disabled = false;
-                    }
-                } else {
-                    const otp = document.getElementById('login-otp').value;
-                    try {
-                        const res = await fetch(API_BASE_URL + '/verify-otp', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email, otp })
-                        });
-                        const data = await res.json();
-                        if (data.success) {
-                            // Now fetch actual user data for dashboard
-                            const loginRes = await fetch(API_BASE_URL + '/api/auth/login-confirm', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ email, otp })
-                            });
-                            const loginData = await loginRes.json();
-                            currentUser = loginData.user;
-                            loginSuccess();
-                        } else {
-                            showToast(data.message, "error");
-                        }
-                    } catch (err) {
-                        showToast("Verification failed", "error");
-                    }
-                }
-            });
-
-            // Handle Forgot Password
-            forgotPassForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const email = document.getElementById('forgot-pass-email').value;
-                const forgotBtn = document.getElementById('forgot-pass-btn');
-                forgotBtn.disabled = true;
-                forgotBtn.textContent = "Sending...";
+                const signupBtn = document.getElementById('signup-btn');
+                signupBtn.disabled = true;
+                signupBtn.textContent = "Sending OTP...";
 
                 try {
-                    const res = await fetch(API_BASE_URL + '/forgot-password', {
+                    const res = await fetch(API_BASE_URL + '/send-otp', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email })
                     });
                     const data = await res.json();
                     if (data.success) {
-                        // Send OTP
-                        await fetch(API_BASE_URL + '/send-otp', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email })
-                        });
-                        showToast("User found. OTP sent to email.");
-                        window.forgotEmail = email;
-                        window.forgotUserId = data.userId;
-                        forgotPassView.style.display = 'none';
-                        resetPassView.style.display = 'flex';
+                        showToast("Verification code sent to email!");
+                        document.getElementById('signup-fields').style.display = 'none';
+                        document.getElementById('otp-section').style.display = 'block';
+                        signupBtn.disabled = false;
+                        signupBtn.textContent = "Verify & Create Account";
+                        window.isOtpSent = true;
+                        startResendTimer('signup');
                     } else {
                         showToast(data.message, "error");
+                        signupBtn.disabled = false;
+                        signupBtn.textContent = "Send OTP";
                     }
                 } catch (err) {
-                    showToast("Server error", "error");
-                } finally {
-                    forgotBtn.disabled = false;
-                    forgotBtn.textContent = "Continue";
+                    showToast("Failed to connect to server", "error");
+                    signupBtn.disabled = false;
+                    signupBtn.textContent = "Send OTP";
                 }
-            });
-
-            // Handle Reset Password
-            resetPassForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const otp = document.getElementById('reset-otp').value;
-                const newPassword = document.getElementById('reset-new-pass').value;
-                const confirmPassword = document.getElementById('reset-confirm-pass').value;
-
-                if (newPassword !== confirmPassword) return showToast("Passwords do not match", "error");
-                if (newPassword.length < 8) return showToast("Password too short", "error");
+            } else {
+                const otp = document.getElementById('reg-otp').value;
+                if (otp.length !== 6) return showToast("Enter 6-digit OTP", "error");
 
                 try {
-                    const res = await fetch(API_BASE_URL + '/reset-password', {
+                    const res = await fetch(API_BASE_URL + '/register', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            userId: window.forgotUserId,
-                            email: window.forgotEmail,
-                            otp,
-                            newPassword
-                        })
+                        body: JSON.stringify({ firstName: fname, lastName: lname, email, contact, password: pass, otp })
                     });
                     const data = await res.json();
                     if (data.success) {
-                        showToast("Password updated! Please login.");
-                        resetPassForm.reset();
-                        resetPassView.style.display = 'none';
+                        showToast("Welcome! Registration successful.");
+                        signupForm.reset();
+                        window.isOtpSent = false;
+                        document.getElementById('signup-fields').style.display = 'block';
+                        document.getElementById('otp-section').style.display = 'none';
+                        signupView.style.display = 'none';
                         loginView.style.display = 'flex';
                     } else {
                         showToast(data.message, "error");
                     }
                 } catch (err) {
-                    showToast("An error occurred during login.", "error");
+                    showToast("Registration failed", "error");
                 }
+            }
+        });
+
+        // Resend Timer Logic
+        let timers = { signup: { val: 30, id: null }, login: { val: 30, id: null } };
+        function startResendTimer(type) {
+            const btn = type === 'signup' ? document.getElementById('resend-otp-btn') : document.getElementById('login-resend-otp-btn');
+            const timerSpan = type === 'signup' ? document.getElementById('otp-timer') : document.getElementById('login-otp-timer');
+            const wrapper = type === 'signup' ? document.getElementById('signup-timer-wrapper') : document.getElementById('login-timer-wrapper');
+
+            timers[type].val = 30;
+            btn.style.display = 'none';
+            wrapper.style.display = 'inline';
+
+            clearInterval(timers[type].id);
+            timers[type].id = setInterval(() => {
+                timers[type].val--;
+                timerSpan.textContent = timers[type].val;
+                if (timers[type].val <= 0) {
+                    clearInterval(timers[type].id);
+                    btn.style.display = 'inline';
+                    wrapper.style.display = 'none';
+                }
+            }, 1000);
+        }
+
+        document.getElementById('resend-otp-btn').addEventListener('click', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('reg-email').value;
+            const res = await fetch(API_BASE_URL + '/send-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
             });
+            if ((await res.json()).success) {
+                showToast("Code resent!");
+                startResendTimer('signup');
+            }
+        });
 
+        document.getElementById('login-resend-otp-btn').addEventListener('click', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const res = await fetch(API_BASE_URL + '/send-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            if ((await res.json()).success) {
+                showToast("Code resent!");
+                startResendTimer('login');
+            }
+        });
 
-            function loginSuccess() {
-                // Hide Auth Views
-                loginView.style.display = 'none';
-                signupView.style.display = 'none';
-                appView.style.display = 'flex';
+        // Handle Login
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-pass').value;
 
-                // Initial Data Fetch
-                if (currentUser.role === 'admin') {
-                    loadAdminDashboard();
-                    loadAdminTransactions(); // For billing section
-                } else {
-                    loadUserDashboard();
-                    loadMarketplace();
-                    loadUserBilling();
+            if (!window.isLoginOtpSent) {
+                const loginBtn = document.getElementById('login-btn');
+                loginBtn.disabled = true;
+                loginBtn.textContent = "Checking...";
+
+                try {
+                    const res = await fetch(API_BASE_URL + '/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    const data = await res.json();
+                    if (data.success && data.requireOtp) {
+                        // Stage 1 pass, send OTP
+                        await fetch(API_BASE_URL + '/send-otp', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email })
+                        });
+                        showToast("Credentials verified. Check email for OTP.");
+                        document.getElementById('login-fields').style.display = 'none';
+                        document.getElementById('login-otp-section').style.display = 'block';
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = "Confirm Login";
+                        window.isLoginOtpSent = true;
+                        startResendTimer('login');
+                    } else {
+                        showToast(data.message, "error");
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = "Sign In";
+                    }
+                } catch (err) {
+                    showToast("Server error", "error");
+                    loginBtn.disabled = false;
                 }
+            } else {
+                const otp = document.getElementById('login-otp').value;
+                try {
+                    const res = await fetch(API_BASE_URL + '/verify-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, otp })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        // Now fetch actual user data for dashboard
+                        const loginRes = await fetch(API_BASE_URL + '/api/auth/login-confirm', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email, otp })
+                        });
+                        const loginData = await loginRes.json();
+                        currentUser = loginData.user;
+                        loginSuccess();
+                    } else {
+                        showToast(data.message, "error");
+                    }
+                } catch (err) {
+                    showToast("Verification failed", "error");
+                }
+            }
+        });
 
-                // Configure UI based on Role
-                configureInterface(currentUser.role);
+        // Handle Forgot Password
+        forgotPassForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('forgot-pass-email').value;
+            const forgotBtn = document.getElementById('forgot-pass-btn');
+            forgotBtn.disabled = true;
+            forgotBtn.textContent = "Sending...";
+
+            try {
+                const res = await fetch(API_BASE_URL + '/forgot-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    // Send OTP
+                    await fetch(API_BASE_URL + '/send-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email })
+                    });
+                    showToast("User found. OTP sent to email.");
+                    window.forgotEmail = email;
+                    window.forgotUserId = data.userId;
+                    forgotPassView.style.display = 'none';
+                    resetPassView.style.display = 'flex';
+                } else {
+                    showToast(data.message, "error");
+                }
+            } catch (err) {
+                showToast("Server error", "error");
+            } finally {
+                forgotBtn.disabled = false;
+                forgotBtn.textContent = "Continue";
+            }
+        });
+
+        // Handle Reset Password
+        resetPassForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const otp = document.getElementById('reset-otp').value;
+            const newPassword = document.getElementById('reset-new-pass').value;
+            const confirmPassword = document.getElementById('reset-confirm-pass').value;
+
+            if (newPassword !== confirmPassword) return showToast("Passwords do not match", "error");
+            if (newPassword.length < 8) return showToast("Password too short", "error");
+
+            try {
+                const res = await fetch(API_BASE_URL + '/reset-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: window.forgotUserId,
+                        email: window.forgotEmail,
+                        otp,
+                        newPassword
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast("Password updated! Please login.");
+                    resetPassForm.reset();
+                    resetPassView.style.display = 'none';
+                    loginView.style.display = 'flex';
+                } else {
+                    showToast(data.message, "error");
+                }
+            } catch (err) {
+                showToast("An error occurred during login.", "error");
+            }
+        });
+
+
+        function loginSuccess() {
+            // Hide Auth Views
+            loginView.style.display = 'none';
+            signupView.style.display = 'none';
+            appView.style.display = 'flex';
+
+            // Initial Data Fetch
+            if (currentUser.role === 'admin') {
+                loadAdminDashboard();
+                loadAdminTransactions(); // For billing section
+            } else {
+                loadUserDashboard();
+                loadMarketplace();
+                loadUserBilling();
             }
 
-            // ============================
-            // 4. DATA FETCHING & RENDERING
-            // ============================
+            // Configure UI based on Role
+            configureInterface(currentUser.role);
+        }
 
-            async function loadUserDashboard() {
-                try {
-                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/dashboard`);
-                    const data = await res.json();
+        // ============================
+        // 4. DATA FETCHING & RENDERING
+        // ============================
 
-                    // Update Credits (Box and Sidebar)
-                    const balDisplay = document.getElementById('user-balance-display');
-                    const sidebarBal = document.getElementById('sidebar-balance');
-                    if (balDisplay) balDisplay.textContent = `₹ ${data.credits.toLocaleString()}`;
-                    if (sidebarBal) sidebarBal.textContent = `Wallet: ₹ ${data.credits.toLocaleString()}`;
+        async function loadUserDashboard() {
+            try {
+                const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/dashboard`);
+                const data = await res.json();
 
-                    // Update Active APIs Count
-                    document.querySelector('#user-dashboard-section .overview .box:nth-child(2) h2').textContent = data.activeApis.length;
+                // Update Credits (Box and Sidebar)
+                const balDisplay = document.getElementById('user-balance-display');
+                const sidebarBal = document.getElementById('sidebar-balance');
+                if (balDisplay) balDisplay.textContent = `₹ ${data.credits.toLocaleString()}`;
+                if (sidebarBal) sidebarBal.textContent = `Wallet: ₹ ${data.credits.toLocaleString()}`;
 
-                    // Update API Key
-                    const keyDisplay = document.getElementById('dashboard-apiKey');
-                    if (keyDisplay) {
-                        keyDisplay.textContent = '•••••••••••••••••••••';
-                        window.dashboardApiKeyVisible = false;
-                        const btn = document.getElementById('dashboard-toggle-key-btn');
-                        if (btn) btn.textContent = 'Show';
-                    }
+                // Update Active APIs Count
+                document.querySelector('#user-dashboard-section .overview .box:nth-child(2) h2').textContent = data.activeApis.length;
 
-                    // Render Active Services List
-                    const servicesContainer = document.querySelector('#user-dashboard-section .panel.large .flex-column');
-                    // Note: We might need to clear existing static content or targeting correct container. 
-                    // Since existing HTML structure is specific, let's target the "My Active Services" list container more precisely.
-                    // Actually, let's just replace the relevant part in HTML or do crude selection:
-                    const serviceListContainer = document.querySelector('#user-dashboard-section .panel.large > div:nth-of-type(2)');
-                    if (serviceListContainer) {
-                        serviceListContainer.innerHTML = ''; // Clear static
-                        data.activeApis.forEach(api => {
-                            const div = document.createElement('div');
-                            div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9; margin-bottom: 10px;";
-                            div.innerHTML = `
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <div style="width: 32px; height: 32px; background: #e0e7ff; color: #4338ca; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px;">⚡</div>
+                // Update API Key
+                const keyDisplay = document.getElementById('dashboard-apiKey');
+                if (keyDisplay) {
+                    keyDisplay.textContent = '•••••••••••••••••••••';
+                    window.dashboardApiKeyVisible = false;
+                    const btn = document.getElementById('dashboard-toggle-key-btn');
+                    if (btn) btn.textContent = 'Show';
+                }
+
+                // Render Active Services List
+                const serviceListContainer = document.querySelector('#user-dashboard-section .panel.large > div:nth-of-type(2)');
+                if (serviceListContainer) {
+                    serviceListContainer.innerHTML = ''; // Clear static
+                    data.activeApis.forEach(api => {
+                        const div = document.createElement('div');
+                        div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9; margin-bottom: 5px;";
+                        div.innerHTML = `
+                                <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                                    <div style="width: 40px; height: 40px; background: #eef2ff; color: #4f46e5; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px;">🧩</div>
                                     <div>
-                                        <div style="font-weight: 600; font-size: 14px;">${api.name}</div>
-                                        <div style="font-size: 12px; color: #64748b;">${api.category}</div>
+                                        <div style="font-weight: 700; font-size: 14px; color: #0f172a;">${api.name}</div>
+                                        <div style="font-size: 12px; font-family: monospace; color: #10b981; margin-top: 2px;">${api.api_key || 'ak_svc_generating...'}</div>
                                     </div>
                                 </div>
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <span class="status-badge paid">Active</span>
-                                    <button class="small danger" style="padding: 2px 6px; margin: 0; font-size: 11px;" onclick="removeApi(${api.apiId})">Remove</button>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <button class="small" style="background: white; border: 1px solid #e2e8f0; color: #475569; padding: 6px 12px; margin: 0;" onclick="viewDocumentation(${api.apiId}, '${api.api_key}')">Docs</button>
+                                    <button class="small danger" style="padding: 6px 10px; margin: 0;" onclick="removeApi(${api.apiId})">×</button>
                                 </div>
                             `;
-                            serviceListContainer.appendChild(div);
+                        serviceListContainer.appendChild(div);
+                    });
+                }
+
+                // Initialize charts when pages are loaded
+                // let userTrafficChartInstance = null; // Moved to global scope above
+                // let userUsageWeekChartInstance = null; // Moved to global scope above
+
+                // function loadUserDashboard() { // Already async, just adding chart logic
+                // document.getElementById('welcome-name').textContent = getCurrentUser()?.name || 'User'; // getCurrentUser() not defined, skipping
+
+                const trafficCtx = document.getElementById('trafficChart');
+                if (trafficCtx) {
+                    if (userTrafficChartInstance) {
+                        userTrafficChartInstance.destroy();
+                    }
+
+                    // Fetch usage data for the chart
+                    const usageRes = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/usage`);
+                    const usageData = await usageRes.json();
+
+                    // Collapse datasets into a single daily total for the dashboard chart
+                    const dailyTotals = [0, 0, 0, 0, 0, 0, 0];
+                    if (usageData.success && usageData.datasets) {
+                        usageData.datasets.forEach(ds => {
+                            ds.data.forEach((val, idx) => {
+                                if (idx < 7) dailyTotals[idx] += val;
+                            });
                         });
                     }
 
-                    // Initialize charts when pages are loaded
-                    // let userTrafficChartInstance = null; // Moved to global scope above
-                    // let userUsageWeekChartInstance = null; // Moved to global scope above
+                    userTrafficChartInstance = new Chart(trafficCtx.getContext('2d'), {
+                        type: 'bar',
+                        data: {
+                            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                            datasets: [{
+                                label: 'API Requests',
+                                data: dailyTotals,
+                                backgroundColor: '#4338ca',
+                                borderRadius: 6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    grid: { color: '#f1f5f9' },
+                                    ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' }
+                                },
+                                x: {
+                                    grid: { display: false },
+                                    ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' }
+                                }
+                            }
+                        }
+                    });
+                }
 
-                    // function loadUserDashboard() { // Already async, just adding chart logic
-                    // document.getElementById('welcome-name').textContent = getCurrentUser()?.name || 'User'; // getCurrentUser() not defined, skipping
+            } catch (err) {
+                console.error("Dashboard load error", err);
+            }
+        }
 
-                    const trafficCtx = document.getElementById('trafficChart');
-                    if (trafficCtx) {
-                        if (userTrafficChartInstance) {
-                            userTrafficChartInstance.destroy();
+        // --- Top-up Modal Logic ---
+        window.showTopupModal = () => {
+            document.getElementById('topup-modal').style.display = 'flex';
+        };
+
+        window.hideTopupModal = () => {
+            document.getElementById('topup-modal').style.display = 'none';
+        };
+
+        window.setTopupAmount = (amt) => {
+            document.getElementById('custom-topup-amount').value = amt;
+            document.querySelectorAll('.amount-pill').forEach(btn => {
+                const btnAmt = parseInt(btn.textContent.replace('₹ ', '').replace(',', ''));
+                btn.classList.toggle('active', btnAmt === amt);
+            });
+        };
+
+        window.selectPaymentMethod = (el, method) => {
+            document.querySelectorAll('.payment-method').forEach(m => m.classList.remove('selected'));
+            el.classList.add('selected');
+            window.selectedPaymentMethod = method;
+        };
+
+        window.processTopup = async () => {
+            const amount = parseInt(document.getElementById('custom-topup-amount').value);
+            if (!amount || amount <= 0) return alert("Please enter a valid amount");
+
+            const btn = document.getElementById('process-topup-btn');
+            const originalText = btn.textContent;
+            btn.textContent = "Processing Payment...";
+            btn.disabled = true;
+
+            try {
+                // Simulate payment gateway delay
+                await new Promise(r => setTimeout(r, 1500));
+
+                const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/topup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showToast(data.message);
+                    window.hideTopupModal();
+                    loadUserDashboard();
+                    loadUserBilling();
+                    if (currentUser.role === 'admin') {
+                        loadAdminDashboard();
+                        loadAdminTransactions();
+                    }
+                } else {
+                    showToast("Top-up Failed: " + data.message, "error");
+                }
+            } catch (err) {
+                showToast("Error processing top-up", "error");
+            } finally {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        };
+
+        function loadUserUsagePage() {
+            const ctx = document.getElementById('userUsageWeekChart');
+            const ctxResponse = document.getElementById('userResponseTimeChart');
+            const ctxError = document.getElementById('userErrorDistChart');
+
+            if (!ctx || !ctxResponse || !ctxError) return;
+
+            // 1. Initialize Average Response Time Chart (Line)
+            if (window.userResponseTimeChartInstance) {
+                window.userResponseTimeChartInstance.destroy();
+            }
+            window.userResponseTimeChartInstance = new Chart(ctxResponse, {
+                type: 'line',
+                data: {
+                    labels: ['10:00', '10:05', '10:10', '10:15', '10:20', '10:25', '10:30'],
+                    datasets: [{
+                        label: 'Latency (ms)',
+                        data: [180, 210, 190, 310, 205, 198, 202],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHoverRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#1e293b',
+                            titleFont: { family: 'Inter' },
+                            bodyFont: { family: 'Inter', weight: 'bold' }
+                        }
+                    },
+                    scales: {
+                        y: { grid: { color: '#f1f5f9' }, min: 100, ticks: { font: { family: 'Inter' }, color: '#64748b' } },
+                        x: { grid: { display: false }, ticks: { font: { family: 'Inter' }, color: '#64748b' } }
+                    }
+                }
+            });
+
+            // 2. Initialize Error Distribution Chart (Doughnut)
+            if (window.userErrorDistChartInstance) {
+                window.userErrorDistChartInstance.destroy();
+            }
+            window.userErrorDistChartInstance = new Chart(ctxError, {
+                type: 'doughnut',
+                data: {
+                    labels: ['404 Not Found', '429 Rate Limit', '500 Server Error', '401 Unauthorized'],
+                    datasets: [{
+                        data: [45, 30, 15, 10],
+                        backgroundColor: ['#f87171', '#fbbf24', '#f43f5e', '#a78bfa'],
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: { font: { family: 'Inter', size: 11 }, usePointStyle: true, boxWidth: 8 }
+                        },
+                        tooltip: {
+                            backgroundColor: '#1e293b',
+                            titleFont: { family: 'Inter' },
+                            bodyFont: { family: 'Inter', weight: 'bold' }
+                        }
+                    }
+                }
+            });
+
+            // 3. Initialize Usage Breakdown Chart (Stacked Bar)
+            fetch(API_BASE_URL + `/api/user/${currentUser.id}/usage`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.datasets.length > 0) {
+                        if (window.userUsageWeekChartInstance) {
+                            window.userUsageWeekChartInstance.destroy();
                         }
 
-                        // Fetch usage data for the chart
-                        const usageRes = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/usage`);
-                        const usageData = await usageRes.json();
-
-                        // Collapse datasets into a single daily total for the dashboard chart
-                        const dailyTotals = [0, 0, 0, 0, 0, 0, 0];
-                        if (usageData.success && usageData.datasets) {
-                            usageData.datasets.forEach(ds => {
-                                ds.data.forEach((val, idx) => {
-                                    if (idx < 7) dailyTotals[idx] += val;
-                                });
-                            });
-                        }
-
-                        userTrafficChartInstance = new Chart(trafficCtx.getContext('2d'), {
+                        window.userUsageWeekChartInstance = new Chart(ctx, {
                             type: 'bar',
                             data: {
                                 labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                                datasets: [{
-                                    label: 'API Requests',
-                                    data: dailyTotals,
-                                    backgroundColor: '#4338ca',
-                                    borderRadius: 6
-                                }]
+                                datasets: data.datasets
                             },
                             options: {
                                 responsive: true,
                                 maintainAspectRatio: false,
-                                plugins: { legend: { display: false } },
+                                plugins: {
+                                    legend: {
+                                        position: 'top',
+                                        labels: { font: { family: 'Inter' } }
+                                    },
+                                    tooltip: {
+                                        backgroundColor: '#1e293b',
+                                        titleFont: { family: 'Inter', size: 13 },
+                                        bodyFont: { family: 'Inter', size: 14, weight: 'bold' },
+                                        padding: 12,
+                                        displayColors: true,
+                                        callbacks: {
+                                            label: function (context) {
+                                                return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' reqs';
+                                            }
+                                        }
+                                    }
+                                },
                                 scales: {
                                     y: {
                                         beginAtZero: true,
-                                        grid: { color: '#f1f5f9' },
-                                        ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' }
+                                        stacked: true,
+                                        grid: { color: '#f1f5f9', drawBorder: false },
+                                        ticks: {
+                                            font: { family: 'Inter', size: 12 },
+                                            color: '#64748b',
+                                            callback: function (value) {
+                                                if (value >= 1000) return (value / 1000) + 'k';
+                                                return value;
+                                            }
+                                        }
                                     },
                                     x: {
+                                        stacked: true,
                                         grid: { display: false },
-                                        ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' }
+                                        ticks: { font: { family: 'Inter', size: 12 }, color: '#64748b' }
                                     }
                                 }
                             }
                         });
                     }
 
-                } catch (err) {
-                    console.error("Dashboard load error", err);
-                }
+                    // Populate summary metrics
+                    if (data.totalRequests) document.getElementById('user-total-requests').textContent = data.totalRequests;
+                    if (data.totalRequests) {
+                        // Mocking monthly as slightly higher than weekly
+                        const weeklyNum = parseInt(data.totalRequests.replace(/,/g, '')) || 0;
+                        document.getElementById('user-monthly-requests').textContent = (weeklyNum * 4.2).toLocaleString(undefined, { maximumFractionDigits: 0 });
+                    }
+                    if (data.avgLatency) document.getElementById('user-avg-latency').textContent = data.avgLatency;
+                    if (data.errorRate) document.getElementById('user-error-rate').textContent = data.errorRate;
+                });
+        }
+
+        let allMarketplaceApis = [];
+
+        async function loadMarketplace() {
+            try {
+                const res = await fetch(API_BASE_URL + '/api/apis');
+                const apis = await res.json();
+                allMarketplaceApis = apis;
+                renderMarketplace(apis);
+            } catch (err) {
+                console.error("Marketplace error", err);
+            }
+        }
+
+        function renderMarketplace(apis) {
+            const container = document.querySelector('.marketplace');
+            container.innerHTML = '';
+
+            if (apis.length === 0) {
+                container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #64748b; padding: 40px;">No APIs found matching your search.</p>';
+                return;
             }
 
-            // --- Top-up Modal Logic ---
-            window.showTopupModal = () => {
-                document.getElementById('topup-modal').style.display = 'flex';
-            };
-
-            window.hideTopupModal = () => {
-                document.getElementById('topup-modal').style.display = 'none';
-            };
-
-            window.setTopupAmount = (amt) => {
-                document.getElementById('custom-topup-amount').value = amt;
-                document.querySelectorAll('.amount-pill').forEach(btn => {
-                    const btnAmt = parseInt(btn.textContent.replace('₹ ', '').replace(',', ''));
-                    btn.classList.toggle('active', btnAmt === amt);
-                });
-            };
-
-            window.selectPaymentMethod = (el, method) => {
-                document.querySelectorAll('.payment-method').forEach(m => m.classList.remove('selected'));
-                el.classList.add('selected');
-                window.selectedPaymentMethod = method;
-            };
-
-            window.processTopup = async () => {
-                const amount = parseInt(document.getElementById('custom-topup-amount').value);
-                if (!amount || amount <= 0) return alert("Please enter a valid amount");
-
-                const btn = document.getElementById('process-topup-btn');
-                const originalText = btn.textContent;
-                btn.textContent = "Processing Payment...";
-                btn.disabled = true;
-
-                try {
-                    // Simulate payment gateway delay
-                    await new Promise(r => setTimeout(r, 1500));
-
-                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/topup`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ amount })
-                    });
-                    const data = await res.json();
-
-                    if (data.success) {
-                        showToast(data.message);
-                        window.hideTopupModal();
-                        loadUserDashboard();
-                        loadUserBilling();
-                        if (currentUser.role === 'admin') {
-                            loadAdminDashboard();
-                            loadAdminTransactions();
-                        }
-                    } else {
-                        showToast("Top-up Failed: " + data.message, "error");
-                    }
-                } catch (err) {
-                    showToast("Error processing top-up", "error");
-                } finally {
-                    btn.textContent = originalText;
-                    btn.disabled = false;
-                }
-            };
-
-            function loadUserUsagePage() {
-                const ctx = document.getElementById('userUsageWeekChart');
-                const ctxResponse = document.getElementById('userResponseTimeChart');
-                const ctxError = document.getElementById('userErrorDistChart');
-
-                if (!ctx || !ctxResponse || !ctxError) return;
-
-                // 1. Initialize Average Response Time Chart (Line)
-                if (window.userResponseTimeChartInstance) {
-                    window.userResponseTimeChartInstance.destroy();
-                }
-                window.userResponseTimeChartInstance = new Chart(ctxResponse, {
-                    type: 'line',
-                    data: {
-                        labels: ['10:00', '10:05', '10:10', '10:15', '10:20', '10:25', '10:30'],
-                        datasets: [{
-                            label: 'Latency (ms)',
-                            data: [180, 210, 190, 310, 205, 198, 202],
-                            borderColor: '#3b82f6',
-                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                            borderWidth: 2,
-                            fill: true,
-                            tension: 0.4,
-                            pointRadius: 0,
-                            pointHoverRadius: 5
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: {
-                                backgroundColor: '#1e293b',
-                                titleFont: { family: 'Inter' },
-                                bodyFont: { family: 'Inter', weight: 'bold' }
-                            }
-                        },
-                        scales: {
-                            y: { grid: { color: '#f1f5f9' }, min: 100, ticks: { font: { family: 'Inter' }, color: '#64748b' } },
-                            x: { grid: { display: false }, ticks: { font: { family: 'Inter' }, color: '#64748b' } }
-                        }
-                    }
-                });
-
-                // 2. Initialize Error Distribution Chart (Doughnut)
-                if (window.userErrorDistChartInstance) {
-                    window.userErrorDistChartInstance.destroy();
-                }
-                window.userErrorDistChartInstance = new Chart(ctxError, {
-                    type: 'doughnut',
-                    data: {
-                        labels: ['404 Not Found', '429 Rate Limit', '500 Server Error', '401 Unauthorized'],
-                        datasets: [{
-                            data: [45, 30, 15, 10],
-                            backgroundColor: ['#f87171', '#fbbf24', '#f43f5e', '#a78bfa'],
-                            borderWidth: 0,
-                            hoverOffset: 4
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        cutout: '70%',
-                        plugins: {
-                            legend: {
-                                position: 'right',
-                                labels: { font: { family: 'Inter', size: 11 }, usePointStyle: true, boxWidth: 8 }
-                            },
-                            tooltip: {
-                                backgroundColor: '#1e293b',
-                                titleFont: { family: 'Inter' },
-                                bodyFont: { family: 'Inter', weight: 'bold' }
-                            }
-                        }
-                    }
-                });
-
-                // 3. Initialize Usage Breakdown Chart (Stacked Bar)
-                fetch(API_BASE_URL + `/api/user/${currentUser.id}/usage`)
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.success && data.datasets.length > 0) {
-                            if (window.userUsageWeekChartInstance) {
-                                window.userUsageWeekChartInstance.destroy();
-                            }
-
-                            window.userUsageWeekChartInstance = new Chart(ctx, {
-                                type: 'bar',
-                                data: {
-                                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                                    datasets: data.datasets
-                                },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: {
-                                        legend: {
-                                            position: 'top',
-                                            labels: { font: { family: 'Inter' } }
-                                        },
-                                        tooltip: {
-                                            backgroundColor: '#1e293b',
-                                            titleFont: { family: 'Inter', size: 13 },
-                                            bodyFont: { family: 'Inter', size: 14, weight: 'bold' },
-                                            padding: 12,
-                                            displayColors: true,
-                                            callbacks: {
-                                                label: function (context) {
-                                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' reqs';
-                                                }
-                                            }
-                                        }
-                                    },
-                                    scales: {
-                                        y: {
-                                            beginAtZero: true,
-                                            stacked: true,
-                                            grid: { color: '#f1f5f9', drawBorder: false },
-                                            ticks: {
-                                                font: { family: 'Inter', size: 12 },
-                                                color: '#64748b',
-                                                callback: function (value) {
-                                                    if (value >= 1000) return (value / 1000) + 'k';
-                                                    return value;
-                                                }
-                                            }
-                                        },
-                                        x: {
-                                            stacked: true,
-                                            grid: { display: false },
-                                            ticks: { font: { family: 'Inter', size: 12 }, color: '#64748b' }
-                                        }
-                                    }
-                                }
-                            });
-                        }
-
-                        // Populate summary metrics
-                        if (data.totalRequests) document.getElementById('user-total-requests').textContent = data.totalRequests;
-                        if (data.avgLatency) document.getElementById('user-avg-latency').textContent = data.avgLatency;
-                        if (data.errorRate) document.getElementById('user-error-rate').textContent = data.errorRate;
-                    });
-            }
-
-            let allMarketplaceApis = [];
-
-            async function loadMarketplace() {
-                try {
-                    const res = await fetch(API_BASE_URL + '/api/apis');
-                    const apis = await res.json();
-                    allMarketplaceApis = apis;
-                    renderMarketplace(apis);
-                } catch (err) {
-                    console.error("Marketplace error", err);
-                }
-            }
-
-            function renderMarketplace(apis) {
-                const container = document.querySelector('.marketplace');
-                container.innerHTML = '';
-
-                if (apis.length === 0) {
-                    container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #64748b; padding: 40px;">No APIs found matching your search.</p>';
-                    return;
-                }
-
-                apis.forEach(api => {
-                    const card = document.createElement('div');
-                    card.className = 'api-card';
-                    card.innerHTML = `
+            apis.forEach(api => {
+                const card = document.createElement('div');
+                card.className = 'api-card';
+                const badgeHtml = api.badge ? `<div class="api-badge badge-${api.badge.toLowerCase()}">${api.badge}</div>` : '';
+                card.innerHTML = `
+                        ${badgeHtml}
                         <img src="${api.image}" alt="">
                         <h3>${api.name}</h3>
                         <span>${api.provider}</span>
                         <p>${api.description}</p>
                         <div class="api-footer">
-                            <label>₹${api.price}</label>
+                            <div class="price-tag">
+                                <span class="price-val">₹${api.price}</span>
+                                <span class="price-sub">per month</span>
+                            </div>
                             <button onclick="purchaseApi(${api.id})">Request Access</button>
                         </div>
                    `;
-                    container.appendChild(card);
-                });
-            }
+                container.appendChild(card);
+            });
+        }
 
-            window.filterMarketplace = () => {
-                const searchStr = document.getElementById('api-search-input').value.toLowerCase();
-                const filtered = allMarketplaceApis.filter(api =>
-                    api.name.toLowerCase().includes(searchStr) ||
-                    api.provider.toLowerCase().includes(searchStr) ||
-                    api.description.toLowerCase().includes(searchStr) ||
-                    (api.category && api.category.toLowerCase().includes(searchStr))
-                );
+        window.filterCategory = (cat, btn) => {
+            // UI Toggle
+            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            if (cat === 'All') {
+                renderMarketplace(allMarketplaceApis);
+            } else {
+                const filtered = allMarketplaceApis.filter(api => api.category === cat);
                 renderMarketplace(filtered);
-            };
+            }
+        };
 
-            // Make purchaseApi global so onclick works
-            window.purchaseApi = (apiId) => {
-                if (!currentUser) return showToast("Please login first", "error");
-                const api = allMarketplaceApis.find(a => a.id === apiId);
-                togglePurchaseModal(true, api);
-            };
+        window.filterMarketplace = () => {
+            const searchStr = document.getElementById('api-search-input').value.toLowerCase();
+            const filtered = allMarketplaceApis.filter(api =>
+                api.name.toLowerCase().includes(searchStr) ||
+                api.provider.toLowerCase().includes(searchStr) ||
+                api.description.toLowerCase().includes(searchStr) ||
+                (api.category && api.category.toLowerCase().includes(searchStr))
+            );
+            renderMarketplace(filtered);
+        };
 
-            window.executePurchase = async () => {
-                const apiId = window.pendingPurchaseApiId;
-                if (!apiId) return;
+        // Make purchaseApi global so onclick works
+        window.purchaseApi = (apiId) => {
+            if (!currentUser) return showToast("Please login first", "error");
+            const api = allMarketplaceApis.find(a => a.id === apiId);
+            togglePurchaseModal(true, api);
+        };
 
-                togglePurchaseModal(false);
+        window.executePurchase = async () => {
+            const apiId = window.pendingPurchaseApiId;
+            if (!apiId) return;
 
-                try {
-                    const res = await fetch(API_BASE_URL + '/api/apis/purchase', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: currentUser.id, apiId })
-                    });
-                    const data = await res.json();
+            togglePurchaseModal(false);
 
-                    if (data.success) {
-                        showToast("Success! " + data.message);
-                        loadUserDashboard(); // Refresh credits & active APIs
-                        loadUserBilling();
-                        loadAdminDashboard();
-                        loadAdminTransactions(); // Refresh admin finances if logged in as admin
-                    } else {
-                        showToast("Purchase Failed: " + data.message, "error");
-                    }
-                } catch (err) {
-                    showToast("Error processing purchase", "error");
+            try {
+                const res = await fetch(API_BASE_URL + '/api/apis/purchase', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUser.id, apiId })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    // showToast("Success! " + data.message);
+                    toggleSuccessModal(true, data.api_key);
+                    loadUserDashboard();
+                    loadUserBilling();
+                    loadAdminDashboard();
+                } else {
+                    showToast("Purchase Failed: " + data.message, "error");
                 }
-            };
+            } catch (err) {
+                showToast("Error processing purchase", "error");
+            }
+        };
 
-            // Allow user to remove an API
-            window.removeApi = async (apiId) => {
-                if (!currentUser) return;
-                if (!confirm("Are you sure you want to remove this API from your services?")) return;
+        window.toggleSuccessModal = (show, key = '') => {
+            const modal = document.getElementById('success-modal');
+            if (show) {
+                document.getElementById('success-api-key').textContent = key;
+                modal.style.display = 'flex';
+            } else {
+                modal.style.display = 'none';
+                showSection('user-dashboard-section');
+            }
+        };
 
-                try {
-                    const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/apis/${apiId}/remove`, {
-                        method: 'POST'
-                    });
-                    const data = await res.json();
+        window.toggleDocModal = (show) => {
+            document.getElementById('doc-modal').style.display = show ? 'flex' : 'none';
+        };
 
-                    if (data.success) {
-                        showToast("API Removed Successfully!");
-                        loadUserDashboard(); // Refresh the list without refreshing page
-                        loadAdminDashboard(); // Update total API count in admin console if relevant
-                    } else {
-                        showToast("Failed to remove API: " + data.message, "error");
-                    }
-                } catch (err) {
-                    showToast("Error removing API: " + err, "error");
+        window.viewDocumentation = (apiId, svcKey) => {
+            const api = allMarketplaceApis.find(a => a.id === apiId);
+            if (!api) return;
+
+            document.getElementById('doc-api-name').textContent = `${api.name} Documentation`;
+            document.getElementById('doc-service-key').textContent = svcKey || 'ak_svc_xxxxxxxx';
+            document.getElementById('doc-example-request').textContent = `curl -X GET "https://api.gateway.com/v1/${api.name.toLowerCase().replace(/ /g, '-')}" \\
+  -H "X-API-KEY: ${svcKey || 'your_key'}"`;
+
+            toggleDocModal(true);
+        };
+
+        // Allow user to remove an API
+        window.removeApi = async (apiId) => {
+            if (!currentUser) return;
+            if (!confirm("Are you sure you want to remove this API from your services?")) return;
+
+            try {
+                const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/apis/${apiId}/remove`, {
+                    method: 'POST'
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showToast("API Removed Successfully!");
+                    loadUserDashboard(); // Refresh the list without refreshing page
+                    loadAdminDashboard(); // Update total API count in admin console if relevant
+                } else {
+                    showToast("Failed to remove API: " + data.message, "error");
                 }
-            };
+            } catch (err) {
+                showToast("Error removing API: " + err, "error");
+            }
+        };
 
-            async function loadUserBilling() {
-                const res = await fetch(
-                    API_BASE_URL + `/api/user/${currentUser.id}/billing`
-                );
+        let allTransactions = [];
+        let currentBillingFilter = 'all';
+
+        async function loadUserBilling() {
+            try {
+                const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/billing`);
                 const transactions = await res.json();
+                allTransactions = transactions;
 
-                const tbody = document.querySelector(
-                    '#user-billing-section table tbody'
-                );
-
-                tbody.innerHTML = '';
+                // Calculate Summary Metrics
+                let totalSpent = 0;
+                let apiIds = new Set();
 
                 transactions.forEach(tx => {
-                    const tr = document.createElement('tr');
-                    const txDate = new Date(tx.date).toLocaleDateString();
-                    tr.innerHTML = `
-                        <td>#TXN-${tx.id}</td>
-                        <td>${txDate}</td>
-                        <td>₹ ${tx.amount}</td>
-                        <td><span class="status-badge paid">Success</span></td>
-                        <td>${tx.description}</td>
-                        <td><a href="#" class="invoice-link" onclick="downloadReceipt(${tx.id}, '${txDate}', ${tx.amount}, '${tx.description}')">Download</a></td>
-                    `;
-                    tbody.appendChild(tr);
+                    if (tx.description.toLowerCase().includes('purchase')) {
+                        totalSpent += tx.amount;
+                        apiIds.add(tx.description);
+                    }
                 });
+
+                // Update Summary Cards
+                document.getElementById('billing-total-spent').textContent = `₹ ${totalSpent.toLocaleString()}`;
+                document.getElementById('billing-wallet-balance').textContent = `₹ ${(currentUser.credits || 0).toLocaleString()}`;
+                document.getElementById('billing-total-apis').textContent = apiIds.size;
+                document.getElementById('billing-total-txns').textContent = transactions.length;
+
+                renderBillingTransactions(transactions);
+            } catch (err) {
+                console.error("Error loading billing", err);
+            }
+        }
+
+        function renderBillingTransactions(txns) {
+            const tbody = document.querySelector('#user-transactions-table tbody');
+            tbody.innerHTML = '';
+
+            if (txns.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px; color: #64748b;">No transactions found.</td></tr>';
+                return;
             }
 
-            // Generate and prompt TXT receipt download
-            window.downloadReceipt = (id, date, amount, description) => {
-                const receiptContent = `
+            txns.forEach(tx => {
+                const tr = document.createElement('tr');
+                const txDate = new Date(tx.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+
+                // Determine Status and Type
+                const isPurchase = tx.description.toLowerCase().includes('purchase');
+                const statusClass = 'success'; // Assuming success for now as per current DB logic
+
+                tr.innerHTML = `
+                    <td style="font-family: monospace; font-weight: 600; color: #1f4ed8;">#TXN-${tx.id}</td>
+                    <td>${txDate}</td>
+                    <td style="font-weight: 700;">₹ ${tx.amount}</td>
+                    <td><span class="status-badge ${statusClass}">${statusClass}</span></td>
+                    <td style="color: #475569;">${tx.description}</td>
+                    <td>
+                        <button class="receipt-btn" onclick="downloadReceipt(${tx.id}, '${txDate}', ${tx.amount}, '${tx.description}')">
+                            <span>⬇</span> Download Receipt
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        window.filterBillingTransactions = () => {
+            const searchStr = document.getElementById('billing-search-input').value.toLowerCase();
+            applyBillingFilters(searchStr, currentBillingFilter);
+        };
+
+        window.filterBillingByType = (type, btn) => {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentBillingFilter = type;
+            const searchStr = document.getElementById('billing-search-input').value.toLowerCase();
+            applyBillingFilters(searchStr, type);
+        };
+
+        function applyBillingFilters(search, type) {
+            let filtered = allTransactions;
+
+            if (type === 'topup') {
+                filtered = filtered.filter(tx => tx.description.toLowerCase().includes('top-up'));
+            } else if (type === 'purchase') {
+                filtered = filtered.filter(tx => tx.description.toLowerCase().includes('purchase'));
+            }
+
+            if (search) {
+                filtered = filtered.filter(tx =>
+                    tx.id.toString().includes(search) ||
+                    tx.description.toLowerCase().includes(search)
+                );
+            }
+
+            renderBillingTransactions(filtered);
+        }
+
+        // Generate and prompt TXT receipt download
+        window.downloadReceipt = (id, date, amount, description) => {
+            const receiptContent = `
 =========================================
             API HUB PLATFORM
 =========================================
@@ -1186,57 +1305,57 @@ Thank you for using API Hub.
 =========================================
                 `.trim();
 
-                const blob = new Blob([receiptContent], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `receipt_TXN_${id}.txt`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            };
+            const blob = new Blob([receiptContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `receipt_TXN_${id}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
 
-            async function loadAdminDashboard() {
-                try {
-                    const res = await fetch(API_BASE_URL + '/api/admin/stats');
-                    const data = await res.json();
+        async function loadAdminDashboard() {
+            try {
+                const res = await fetch(API_BASE_URL + '/api/admin/stats');
+                const data = await res.json();
 
-                    // Revenue
-                    document.querySelector(
-                        '#admin-dashboard-section .overview .box:nth-child(1) h2'
-                    ).textContent = `₹ ${data.revenue.toLocaleString()}`;
+                // Revenue
+                document.querySelector(
+                    '#admin-dashboard-section .overview .box:nth-child(1) h2'
+                ).textContent = `₹ ${data.revenue.toLocaleString()}`;
 
-                    // Total Users
-                    document.querySelector(
-                        '#admin-dashboard-section .overview .box:nth-child(2) h2'
-                    ).textContent = data.totalUsers;
+                // Total Users
+                document.querySelector(
+                    '#admin-dashboard-section .overview .box:nth-child(2) h2'
+                ).textContent = data.totalUsers;
 
-                    const tbody = document.querySelector(
-                        '#admin-dashboard-section table tbody'
-                    );
+                const tbody = document.querySelector(
+                    '#admin-dashboard-section table tbody'
+                );
 
-                    tbody.innerHTML = '';
+                tbody.innerHTML = '';
 
-                    data.allUsers.forEach(u => {
+                data.allUsers.forEach(u => {
 
-                        const statusBadge =
-                            u.status === 'active'
-                                ? `<span class="status-badge paid">Active</span>`
-                                : `<span class="status-badge error">Suspended</span>`;
+                    const statusBadge =
+                        u.status === 'active'
+                            ? `<span class="status-badge paid">Active</span>`
+                            : `<span class="status-badge error">Suspended</span>`;
 
-                        const actionButton =
-                            u.status === 'active'
-                                ? `<button class="small danger" onclick="suspendUser(${u.id})">Suspend</button>`
-                                : `<button class="small" style="background:#10b981" onclick="activateUser(${u.id})">Activate</button>`;
+                    const actionButton =
+                        u.status === 'active'
+                            ? `<button class="small danger" onclick="suspendUser(${u.id})">Suspend</button>`
+                            : `<button class="small" style="background:#10b981" onclick="activateUser(${u.id})">Activate</button>`;
 
-                        const apiDisplay = u.apiCount > 0
-                            ? `<button class="small" style="background: white; border: 1px solid #1f4ed8; color: #1f4ed8;" onclick="viewUserApis(${u.id}, '${u.firstName} ${u.lastName}')">View ${u.apiCount} APIs</button>`
-                            : `0`;
+                    const apiDisplay = u.apiCount > 0
+                        ? `<button class="small" style="background: white; border: 1px solid #1f4ed8; color: #1f4ed8;" onclick="viewUserApis(${u.id}, '${u.firstName} ${u.lastName}')">View ${u.apiCount} APIs</button>`
+                        : `0`;
 
-                        const tr = document.createElement('tr');
+                    const tr = document.createElement('tr');
 
-                        tr.innerHTML = `
+                    tr.innerHTML = `
                 <td>
                     <strong>${u.firstName} ${u.lastName}</strong><br>
                     <span style="font-size:12px; color:gray">${u.email}</span>
@@ -1248,70 +1367,70 @@ Thank you for using API Hub.
                 <td>${actionButton}</td>
             `;
 
-                        tbody.appendChild(tr);
-                    });
+                    tbody.appendChild(tr);
+                });
 
-                    // 4. Load Global Settings
-                    const configRes = await fetch(API_BASE_URL + '/api/admin/config');
-                    const configData = await configRes.json();
-                    if (configData.success && configData.config) {
-                        document.getElementById('admin-rate-limit').value = configData.config.userRateLimit;
-                        document.getElementById('admin-traffic-cap').value = configData.config.globalTrafficCap;
-                        document.getElementById('admin-maintenance-mode').checked = configData.config.maintenanceMode === 1;
-                    }
+                // 4. Load Global Settings
+                const configRes = await fetch(API_BASE_URL + '/api/admin/config');
+                const configData = await configRes.json();
+                if (configData.success && configData.config) {
+                    document.getElementById('admin-rate-limit').value = configData.config.userRateLimit;
+                    document.getElementById('admin-traffic-cap').value = configData.config.globalTrafficCap;
+                    document.getElementById('admin-maintenance-mode').checked = configData.config.maintenanceMode === 1;
+                }
 
-                    // 5. Load APIs for Marketplace Management
-                    const apisRes = await fetch(API_BASE_URL + '/api/admin/apis/all');
-                    const apisData = await apisRes.json();
-                    const apisContainer = document.getElementById('admin-api-list');
-                    apisContainer.innerHTML = '';
+                // 5. Load APIs for Marketplace Management
+                const apisRes = await fetch(API_BASE_URL + '/api/admin/apis/all');
+                const apisData = await apisRes.json();
+                const apisContainer = document.getElementById('admin-api-list');
+                apisContainer.innerHTML = '';
 
-                    apisData.forEach(api => {
-                        const div = document.createElement('div');
-                        div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;";
+                apisData.forEach(api => {
+                    const div = document.createElement('div');
+                    div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;";
 
-                        const statusColor = api.status === 'active' ? 'black' : 'gray';
-                        const disableText = api.status === 'active' ? 'Disable' : 'Enable';
-                        const disableClass = api.status === 'active' ? 'danger' : '';
-                        const disableStyle = api.status === 'active' ? '' : 'background: #10b981; color: white;';
+                    const statusColor = api.status === 'active' ? 'black' : 'gray';
+                    const disableText = api.status === 'active' ? 'Disable' : 'Enable';
+                    const disableClass = api.status === 'active' ? 'danger' : '';
+                    const disableStyle = api.status === 'active' ? '' : 'background: #10b981; color: white;';
 
-                        div.innerHTML = `
+                    div.innerHTML = `
                             <span style="font-weight: 500; color: ${statusColor};">${api.name} (₹ ${api.price})</span>
                             <div style="display: flex; gap: 5px;">
                                 <button class="small" style="padding: 4px 8px;" onclick="editApi(${api.id}, '${api.name}', ${api.price})">Edit</button>
                                 <button class="small ${disableClass}" style="padding: 4px 8px; ${disableStyle}" onclick="toggleApiStatus(${api.id}, '${api.status}')">${disableText}</button>
                             </div>
                         `;
-                        apisContainer.appendChild(div);
-                    });
+                    apisContainer.appendChild(div);
+                });
 
-                } catch (err) {
-                    console.error("Admin dashboard error:", err);
-                }
+            } catch (err) {
+                console.error("Admin dashboard error:", err);
             }
+        }
 
-            async function loadAdminTransactions() {
-                try {
-                    const res = await fetch(API_BASE_URL + '/api/admin/billing');
-                    const data = await res.json();
+        async function loadAdminTransactions() {
+            try {
+                const res = await fetch(API_BASE_URL + '/api/admin/billing');
+                const data = await res.json();
 
-                    if (!data.success) return;
+                if (!data.success) return;
 
-                    // Update metrics
-                    document.querySelector('#admin-billing-section .overview .box:nth-child(1) h2').textContent = `₹ ${data.totalRevenue.toLocaleString()}`;
-                    document.querySelector('#admin-billing-section .overview .box:nth-child(3) h2').textContent = `₹ ${data.avgTransaction}`;
+                // Update metrics
+                document.querySelector('#admin-billing-section .overview .box:nth-child(1) h2').textContent = `₹ ${data.totalRevenue.toLocaleString()}`;
+                document.querySelector('#admin-billing-section .overview .box:nth-child(3) h2').textContent = `₹ ${data.avgTransaction}`;
 
-                    // Note: Pending Payouts & Refund Rate are hardcoded for now, as those features aren't built in the DB yet
-                    document.querySelector('#admin-billing-section .overview .box:nth-child(2) h2').textContent = `₹ ${(data.totalRevenue * 0.1).toLocaleString()}`; // Fake 10% payout
+                // Note: Pending Payouts & Refund Rate are hardcoded for now, as those features aren't built in the DB yet
+                document.querySelector('#admin-billing-section .overview .box:nth-child(2) h2').textContent = `₹ ${(data.totalRevenue * 0.1).toLocaleString()}`; // Fake 10% payout
 
-                    const tbody = document.querySelector('#admin-billing-section .billing-table tbody');
-                    tbody.innerHTML = '';
+                const tbody = document.querySelector('#admin-billing-section .billing-table tbody');
+                tbody.innerHTML = '';
 
-                    data.transactions.forEach(tx => {
-                        let statusHtml = tx.type === 'purchase' ? '<span class="status-badge paid">Success</span>' : '<span class="status-badge pending">Pending</span>';
+                data.transactions.forEach(tx => {
+                    let statusHtml = tx.type === 'purchase' ? '<span class="status-badge paid">Success</span>' : '<span class="status-badge pending">Pending</span>';
 
-                        const tr = document.createElement('tr');
-                        tr.innerHTML = `
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
                             <td>#TXN-${tx.id}</td>
                             <td>${tx.userEmail || 'Unknown'}</td>
                             <td>${tx.type === 'purchase' ? 'API Purchase' : 'Credit Top-up'}</td>
@@ -1319,336 +1438,336 @@ Thank you for using API Hub.
                             <td>${new Date(tx.date).toLocaleString()}</td>
                             <td>${statusHtml}</td>
                         `;
-                        tbody.appendChild(tr);
-                    });
+                    tbody.appendChild(tr);
+                });
 
-                } catch (err) {
-                    console.error("Admin billing data error:", err);
-                }
+            } catch (err) {
+                console.error("Admin billing data error:", err);
             }
+        }
 
-            // ============================
-            // 5. NAVIGATION & RBAC
-            // ============================
-            let currentRole = 'user';
+        // ============================
+        // 5. NAVIGATION & RBAC
+        // ============================
+        let currentRole = 'user';
 
-            function configureInterface(role) {
-                currentRole = role;
-                const sidebarLinks = document.querySelectorAll('.sidebar nav a');
+        function configureInterface(role) {
+            currentRole = role;
+            const sidebarLinks = document.querySelectorAll('.sidebar nav a');
 
-                sidebarLinks.forEach(link => {
-                    const target = link.getAttribute('data-target');
-                    let visible = false;
+            sidebarLinks.forEach(link => {
+                const target = link.getAttribute('data-target');
+                let visible = false;
 
-                    // if (target === 'dashboard-section') visible = true; 
-                    if (target === 'billing-section') visible = true;
-                    if (target === 'settings-section') visible = true; // Everyone has settings likely
+                // if (target === 'dashboard-section') visible = true; 
+                if (target === 'billing-section') visible = true;
+                if (target === 'settings-section') visible = true; // Everyone has settings likely
 
-                    if (role === 'admin') {
-                        if (target === 'dashboard-section') {
-                            visible = true;
-                            link.textContent = "Admin Console";
-                        }
-
-                        // Hide user-specific settings sections
-                        const userSettingElements = document.querySelectorAll('.user-only-setting');
-                        userSettingElements.forEach(el => el.style.display = 'none');
-
-                    } else {
-                        if (['dashboard-section', 'marketplace-section', 'usage-section'].includes(target)) {
-                            visible = true;
-                            if (target === 'usage-section') loadUserUsagePage();
-                        }
-
-                        // Show user-specific settings sections
-                        const userSettingElements = document.querySelectorAll('.user-only-setting');
-                        userSettingElements.forEach(el => el.style.display = 'block');
+                if (role === 'admin') {
+                    if (target === 'dashboard-section') {
+                        visible = true;
+                        link.textContent = "Admin Console";
                     }
 
-                    link.style.display = visible ? 'block' : 'none';
-                });
+                    // Hide user-specific settings sections
+                    const userSettingElements = document.querySelectorAll('.user-only-setting');
+                    userSettingElements.forEach(el => el.style.display = 'none');
 
-                // Set initial active section
-                if (role === 'admin') {
-                    showSection('admin-dashboard-section');
                 } else {
-                    showSection('marketplace-section');
-                }
-            }
+                    if (['dashboard-section', 'marketplace-section', 'usage-section'].includes(target)) {
+                        visible = true;
+                        if (target === 'usage-section') loadUserUsagePage();
+                    }
 
-            function showSection(sectionId) {
-                // Redirects
-                if (sectionId === 'dashboard-section') {
-                    sectionId = currentRole === 'admin' ? 'admin-dashboard-section' : 'user-dashboard-section';
-                }
-                if (sectionId === 'billing-section') {
-                    sectionId = currentRole === 'admin' ? 'admin-billing-section' : 'user-billing-section';
+                    // Show user-specific settings sections
+                    const userSettingElements = document.querySelectorAll('.user-only-setting');
+                    userSettingElements.forEach(el => el.style.display = 'block');
                 }
 
-                const sections = document.querySelectorAll('.page-section');
-                const navLinks = document.querySelectorAll('.sidebar nav a');
-
-                sections.forEach(sec => sec.classList.remove('active-section'));
-
-                const target = document.getElementById(sectionId);
-                if (target) {
-                    target.classList.add('active-section');
-                    // Trigger specific data loads for sections
-                    if (sectionId === 'usage-section') loadUserUsagePage();
-                    if (sectionId === 'user-billing-section') loadUserBilling();
-                    if (sectionId === 'user-dashboard-section') loadUserDashboard();
-                    if (sectionId === 'settings-section') loadUserSettings();
-                }
-
-                navLinks.forEach(link => {
-                    link.classList.remove('active');
-                    const linkTarget = link.getAttribute('data-target');
-
-                    let isActive = false;
-                    if (linkTarget === sectionId) isActive = true;
-                    if (linkTarget === 'dashboard-section' && sectionId.includes('dashboard-section')) isActive = true;
-                    if (linkTarget === 'billing-section' && sectionId.includes('billing-section')) isActive = true;
-
-                    if (isActive) link.classList.add('active');
-                });
-            }
-
-            const sidebarNavLinks = document.querySelectorAll('.sidebar nav a');
-            sidebarNavLinks.forEach(link => {
-                link.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    const targetId = link.getAttribute('data-target');
-                    if (targetId) showSection(targetId);
-                });
+                link.style.display = visible ? 'block' : 'none';
             });
 
-            // Admin User Search logic
-            window.filterAdminUsers = function () {
-                const searchStr = document.getElementById('admin-user-search').value.toLowerCase();
-                const tbody = document.querySelector('#admin-dashboard-section table tbody');
-                if (!tbody) return;
-                const rows = tbody.getElementsByTagName('tr');
-                for (let i = 0; i < rows.length; i++) {
-                    const text = rows[i].textContent.toLowerCase();
-                    if (text.includes(searchStr)) {
-                        rows[i].style.display = '';
-                    } else {
-                        rows[i].style.display = 'none';
-                    }
+            // Set initial active section
+            if (role === 'admin') {
+                showSection('admin-dashboard-section');
+            } else {
+                showSection('marketplace-section');
+            }
+        }
+
+        function showSection(sectionId) {
+            // Redirects
+            if (sectionId === 'dashboard-section') {
+                sectionId = currentRole === 'admin' ? 'admin-dashboard-section' : 'user-dashboard-section';
+            }
+            if (sectionId === 'billing-section') {
+                sectionId = currentRole === 'admin' ? 'admin-billing-section' : 'user-billing-section';
+            }
+
+            const sections = document.querySelectorAll('.page-section');
+            const navLinks = document.querySelectorAll('.sidebar nav a');
+
+            sections.forEach(sec => sec.classList.remove('active-section'));
+
+            const target = document.getElementById(sectionId);
+            if (target) {
+                target.classList.add('active-section');
+                // Trigger specific data loads for sections
+                if (sectionId === 'usage-section') loadUserUsagePage();
+                if (sectionId === 'user-billing-section') loadUserBilling();
+                if (sectionId === 'user-dashboard-section') loadUserDashboard();
+                if (sectionId === 'settings-section') loadUserSettings();
+            }
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                const linkTarget = link.getAttribute('data-target');
+
+                let isActive = false;
+                if (linkTarget === sectionId) isActive = true;
+                if (linkTarget === 'dashboard-section' && sectionId.includes('dashboard-section')) isActive = true;
+                if (linkTarget === 'billing-section' && sectionId.includes('billing-section')) isActive = true;
+
+                if (isActive) link.classList.add('active');
+            });
+        }
+
+        const sidebarNavLinks = document.querySelectorAll('.sidebar nav a');
+        sidebarNavLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = link.getAttribute('data-target');
+                if (targetId) showSection(targetId);
+            });
+        });
+
+        // Admin User Search logic
+        window.filterAdminUsers = function () {
+            const searchStr = document.getElementById('admin-user-search').value.toLowerCase();
+            const tbody = document.querySelector('#admin-dashboard-section table tbody');
+            if (!tbody) return;
+            const rows = tbody.getElementsByTagName('tr');
+            for (let i = 0; i < rows.length; i++) {
+                const text = rows[i].textContent.toLowerCase();
+                if (text.includes(searchStr)) {
+                    rows[i].style.display = '';
+                } else {
+                    rows[i].style.display = 'none';
                 }
-            };
+            }
+        };
 
-            // Admin Logic for Viewing and Removing Specific User APIs
-            window.viewUserApis = async (userId, userName) => {
-                try {
-                    const res = await fetch(API_BASE_URL + `/api/admin/users/${userId}/apis`);
-                    const data = await res.json();
+        // Admin Logic for Viewing and Removing Specific User APIs
+        window.viewUserApis = async (userId, userName) => {
+            try {
+                const res = await fetch(API_BASE_URL + `/api/admin/users/${userId}/apis`);
+                const data = await res.json();
 
-                    if (!data.success) {
-                        return alert("Failed to load user APIs: " + data.message);
-                    }
+                if (!data.success) {
+                    return alert("Failed to load user APIs: " + data.message);
+                }
 
-                    const modal = document.getElementById('admin-user-apis-modal');
-                    const modalTitle = document.getElementById('admin-modal-title');
-                    const apiListContainer = document.getElementById('admin-modal-api-list');
+                const modal = document.getElementById('admin-user-apis-modal');
+                const modalTitle = document.getElementById('admin-modal-title');
+                const apiListContainer = document.getElementById('admin-modal-api-list');
 
-                    modalTitle.textContent = `Active APIs for ${userName}`;
-                    apiListContainer.innerHTML = '';
+                modalTitle.textContent = `Active APIs for ${userName}`;
+                apiListContainer.innerHTML = '';
 
-                    if (data.activeApis.length === 0) {
-                        apiListContainer.innerHTML = '<p style="color: gray; font-size: 14px; text-align: center; margin: 20px 0;">No active APIs found for this user.</p>';
-                    } else {
-                        data.activeApis.forEach(api => {
-                            const div = document.createElement('div');
-                            div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee;";
-                            div.innerHTML = `
+                if (data.activeApis.length === 0) {
+                    apiListContainer.innerHTML = '<p style="color: gray; font-size: 14px; text-align: center; margin: 20px 0;">No active APIs found for this user.</p>';
+                } else {
+                    data.activeApis.forEach(api => {
+                        const div = document.createElement('div');
+                        div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee;";
+                        div.innerHTML = `
                                 <div>
                                     <span style="font-weight: 500; display: block;">${api.name}</span>
                                     <span style="font-size: 12px; color: gray;">${api.category}</span>
                                 </div>
                                 <button class="small danger" style="padding: 4px 8px;" onclick="adminRemoveUserApi(${userId}, ${api.id})">Remove</button>
                             `;
-                            apiListContainer.appendChild(div);
-                        });
-                    }
-
-                    modal.style.display = 'flex';
-                } catch (err) {
-                    alert("Error loading APIs: " + err);
-                }
-            };
-
-            window.closeAdminModal = () => {
-                document.getElementById('admin-user-apis-modal').style.display = 'none';
-            };
-
-            window.adminRemoveUserApi = async (userId, apiId) => {
-                if (!confirm("Remove this API exactly for this specific user?")) return;
-
-                try {
-                    const res = await fetch(API_BASE_URL + `/api/user/${userId}/apis/${apiId}/remove`, {
-                        method: 'POST'
+                        apiListContainer.appendChild(div);
                     });
-                    const data = await res.json();
-
-                    if (data.success) {
-                        showToast("API Removed Successfully!");
-                        // Refresh the modal dynamically so we see it vanish
-                        const userName = document.getElementById('admin-modal-title').textContent.replace('Active APIs for ', '');
-                        await viewUserApis(userId, userName);
-                        // Update background tables
-                        loadAdminDashboard();
-                    } else {
-                        showToast("Removal failed: " + data.message, "error");
-                    }
-                } catch (err) {
-                    showToast("Error removing API.", "error");
-                }
-            };
-
-            // Generic function to export an HTML table to CSV
-            window.exportTableToCSV = function (tableId, filename) {
-                const table = document.getElementById(tableId);
-                if (!table) return alert('Table not found.');
-
-                let csv = [];
-                // Iterate through all rows
-                for (let i = 0; i < table.rows.length; i++) {
-                    const row = [], cols = table.rows[i].querySelectorAll('td, th');
-                    // Iterate through all columns in row
-                    for (let j = 0; j < cols.length; j++) {
-                        // Get inner text, remove newlines, escape potential quotes
-                        let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, '').trim();
-                        data = data.replace(/"/g, '""');
-                        // Push into array enclosed with quotes
-                        row.push('"' + data + '"');
-                    }
-                    csv.push(row.join(','));
                 }
 
-                // Create CSV file text
-                const csvStr = csv.join('\n');
-
-                // Trigger download
-                const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement("a");
-                const url = URL.createObjectURL(blob);
-                link.setAttribute("href", url);
-                link.setAttribute("download", filename);
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                modal.style.display = 'flex';
+            } catch (err) {
+                alert("Error loading APIs: " + err);
             }
-        });
+        };
 
-    </script>
-    <style>
-        /* Simple utility for initial state */
-        #app-view {
-            display: none;
-            width: 100%;
-        }
+        window.closeAdminModal = () => {
+            document.getElementById('admin-user-apis-modal').style.display = 'none';
+        };
 
-        #signup-view {
-            display: none;
-            /* Hidden by default */
-        }
+        window.adminRemoveUserApi = async (userId, apiId) => {
+            if (!confirm("Remove this API exactly for this specific user?")) return;
 
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(4px);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            animation: fadeIn 0.2s ease-out;
-        }
+            try {
+                const res = await fetch(API_BASE_URL + `/api/user/${userId}/apis/${apiId}/remove`, {
+                    method: 'POST'
+                });
+                const data = await res.json();
 
-        .modal-content {
-            background: white;
-            padding: 30px;
-            border-radius: 16px;
-            width: 440px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-            transform: scale(0.95);
-            transition: transform 0.2s ease-out;
-        }
+                if (data.success) {
+                    showToast("API Removed Successfully!");
+                    // Refresh the modal dynamically so we see it vanish
+                    const userName = document.getElementById('admin-modal-title').textContent.replace('Active APIs for ', '');
+                    await viewUserApis(userId, userName);
+                    // Update background tables
+                    loadAdminDashboard();
+                } else {
+                    showToast("Removal failed: " + data.message, "error");
+                }
+            } catch (err) {
+                showToast("Error removing API.", "error");
+            }
+        };
 
-        .modal-overlay.active {
-            display: flex;
-        }
+        // Generic function to export an HTML table to CSV
+        window.exportTableToCSV = function (tableId, filename) {
+            const table = document.getElementById(tableId);
+            if (!table) return alert('Table not found.');
 
-        .modal-overlay.active .modal-content {
-            transform: scale(1);
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
+            let csv = [];
+            // Iterate through all rows
+            for (let i = 0; i < table.rows.length; i++) {
+                const row = [], cols = table.rows[i].querySelectorAll('td, th');
+                // Iterate through all columns in row
+                for (let j = 0; j < cols.length; j++) {
+                    // Get inner text, remove newlines, escape potential quotes
+                    let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, '').trim();
+                    data = data.replace(/"/g, '""');
+                    // Push into array enclosed with quotes
+                    row.push('"' + data + '"');
+                }
+                csv.push(row.join(','));
             }
 
-            to {
-                opacity: 1;
-            }
+            // Create CSV file text
+            const csvStr = csv.join('\n');
+
+            // Trigger download
+            const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    });
+
+</script>
+<style>
+    /* Simple utility for initial state */
+    #app-view {
+        display: none;
+        width: 100%;
+    }
+
+    #signup-view {
+        display: none;
+        /* Hidden by default */
+    }
+
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        animation: fadeIn 0.2s ease-out;
+    }
+
+    .modal-content {
+        background: white;
+        padding: 30px;
+        border-radius: 16px;
+        width: 440px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        transform: scale(0.95);
+        transition: transform 0.2s ease-out;
+    }
+
+    .modal-overlay.active {
+        display: flex;
+    }
+
+    .modal-overlay.active .modal-content {
+        transform: scale(1);
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
         }
 
-        /* Toast Notifications */
-        #toast-container {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            z-index: 10000;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
+        to {
+            opacity: 1;
         }
+    }
 
-        .toast {
-            min-width: 300px;
-            padding: 16px 20px;
-            background: #1e293b;
-            color: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            animation: slideIn 0.3s ease-out;
-            cursor: pointer;
-        }
+    /* Toast Notifications */
+    #toast-container {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
 
-        .toast.success {
-            border-left: 4px solid #10b981;
-        }
+    .toast {
+        min-width: 300px;
+        padding: 16px 20px;
+        background: #1e293b;
+        color: white;
+        border-radius: 12px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        animation: slideIn 0.3s ease-out;
+        cursor: pointer;
+    }
 
-        .toast.error {
-            border-left: 4px solid #ef4444;
-        }
+    .toast.success {
+        border-left: 4px solid #10b981;
+    }
 
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
+    .toast.error {
+        border-left: 4px solid #ef4444;
+    }
 
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        .toast.fade-out {
+    @keyframes slideIn {
+        from {
             transform: translateX(100%);
             opacity: 0;
-            transition: all 0.3s ease-in;
         }
-    </style>
+
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+
+    .toast.fade-out {
+        transform: translateX(100%);
+        opacity: 0;
+        transition: all 0.3s ease-in;
+    }
+</style>
 </head>
 
 <body>
@@ -1876,9 +1995,14 @@ Thank you for using API Hub.
                 <a href="#" data-target="settings-section">Settings</a>
             </nav>
 
-            <div class="credits-pill">
-                <span id="sidebar-balance">Wallet: ₹ 2,450</span>
-                <button class="add-credits-btn-small" onclick="window.showTopupModal()">+</button>
+            <div class="credits-pill"
+                style="padding: 15px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);">
+                <span id="sidebar-balance"
+                    style="font-size: 16px; font-weight: 700; color: #fff; display: block; margin-bottom: 10px;">₹
+                    0.00</span>
+                <button class="add-money-btn"
+                    style="background: linear-gradient(135deg, #10b981, #059669); font-weight: 700; letter-spacing: 0.5px;"
+                    onclick="window.showTopupModal()">+ ADD MONEY</button>
             </div>
         </aside>
 
@@ -2162,8 +2286,19 @@ Thank you for using API Hub.
                     </header>
 
                     <div class="search-bar">
-                        <input type="text" id="api-search-input" placeholder="Search for APIs..."
+                        <span style="color: #64748b; font-size: 18px;">🔍</span>
+                        <input type="text" id="api-search-input"
+                            placeholder="Search for APIs by name, category or provider..."
                             onkeyup="filterMarketplace()">
+                    </div>
+
+                    <div class="category-filter" id="marketplace-categories">
+                        <button class="cat-btn active" onclick="filterCategory('All', this)">All APIs</button>
+                        <button class="cat-btn" onclick="filterCategory('Maps', this)">Maps</button>
+                        <button class="cat-btn" onclick="filterCategory('Weather', this)">Weather</button>
+                        <button class="cat-btn" onclick="filterCategory('Payments', this)">Payments</button>
+                        <button class="cat-btn" onclick="filterCategory('Storage', this)">Storage</button>
+                        <button class="cat-btn" onclick="filterCategory('Analytics', this)">Analytics</button>
                     </div>
 
                     <div class="marketplace">
@@ -2257,18 +2392,23 @@ Thank you for using API Hub.
                     <div class="metrics">
                         <div class="metric-card">
                             <h4>Total Requests</h4>
-                            <h2 id="user-total-requests">18,942</h2>
-                            <span>Processed in last 7 days</span>
+                            <h2 id="user-total-requests">0</h2>
+                            <span>Last 7 Days</span>
+                        </div>
+                        <div class="metric-card">
+                            <h4>Monthly Usage</h4>
+                            <h2 id="user-monthly-requests">0</h2>
+                            <span>Total this month</span>
                         </div>
                         <div class="metric-card">
                             <h4>Average Latency</h4>
-                            <h2 id="user-avg-latency">210 ms</h2>
+                            <h2 id="user-avg-latency">0 ms</h2>
                             <span>Across all APIs</span>
                         </div>
                         <div class="metric-card">
                             <h4>Error Rate</h4>
-                            <h2 id="user-error-rate">0.8%</h2>
-                            <span>Failed requests</span>
+                            <h2 id="user-error-rate">0.0%</h2>
+                            <span>Success reliability</span>
                         </div>
                     </div>
 
@@ -2358,13 +2498,45 @@ Thank you for using API Hub.
                         <p>Review your transaction history and download past receipts</p>
                     </header>
 
-                    <!-- Invoice History -->
-                    <div class="panel" style="margin-top: 20px;">
-                        <div
-                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                            <h3 style="margin: 0;">Billing History</h3>
+                    <!-- Billing Summary Cards -->
+                    <div class="billing-summary">
+                        <div class="summary-card">
+                            <label>TOTAL SPENT</label>
+                            <h2 id="billing-total-spent">₹ 0</h2>
                         </div>
-                        <table class="billing-table">
+                        <div class="summary-card">
+                            <label>WALLET BALANCE</label>
+                            <h2 id="billing-wallet-balance">₹ 0</h2>
+                        </div>
+                        <div class="summary-card">
+                            <label>APIS PURCHASED</label>
+                            <h2 id="billing-total-apis">0</h2>
+                        </div>
+                        <div class="summary-card">
+                            <label>TOTAL TRANSACTIONS</label>
+                            <h2 id="billing-total-txns">0</h2>
+                        </div>
+                    </div>
+
+                    <!-- Invoice History -->
+                    <div class="panel">
+                        <div class="billing-controls">
+                            <div class="billing-search">
+                                <span>🔍</span>
+                                <input type="text" id="billing-search-input"
+                                    placeholder="Search by ID or description..." onkeyup="filterBillingTransactions()">
+                            </div>
+                            <div class="billing-filters">
+                                <button class="filter-btn active"
+                                    onclick="filterBillingByType('all', this)">All</button>
+                                <button class="filter-btn" onclick="filterBillingByType('topup', this)">Wallet
+                                    Top-up</button>
+                                <button class="filter-btn" onclick="filterBillingByType('purchase', this)">API
+                                    Purchase</button>
+                            </div>
+                        </div>
+
+                        <table class="billing-table" id="user-transactions-table">
                             <thead>
                                 <tr>
                                     <th>Transaction ID</th>
@@ -2376,27 +2548,7 @@ Thank you for using API Hub.
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr>
-                                    <td>#INV-2024-001</td>
-                                    <td>Feb 01, 2026</td>
-                                    <td>₹ 4,999.00</td>
-                                    <td><span class="status-badge paid">Paid</span></td>
-                                    <td><a href="#" class="invoice-link">Download</a></td>
-                                </tr>
-                                <tr>
-                                    <td>#INV-2024-002</td>
-                                    <td>Jan 01, 2026</td>
-                                    <td>₹ 4,999.00</td>
-                                    <td><span class="status-badge paid">Paid</span></td>
-                                    <td><a href="#" class="invoice-link">Download</a></td>
-                                </tr>
-                                <tr>
-                                    <td>#INV-2023-012</td>
-                                    <td>Dec 01, 2025</td>
-                                    <td>₹ 4,500.00</td>
-                                    <td><span class="status-badge paid">Paid</span></td>
-                                    <td><a href="#" class="invoice-link">Download</a></td>
-                                </tr>
+                                <!-- Transactions Injected Here -->
                             </tbody>
                         </table>
                     </div>
@@ -2553,6 +2705,70 @@ Thank you for using API Hub.
         </div>
     </div>
 
+    <!-- API DOCUMENTATION MODAL -->
+    <div id="doc-modal" class="modal-overlay">
+        <div class="modal-content" style="width: 700px; max-width: 95vw;">
+            <div class="modal-header">
+                <h3 id="doc-api-name">API Documentation</h3>
+                <button class="close-modal" onclick="toggleDocModal(false)">&times;</button>
+            </div>
+            <div id="doc-content" style="max-height: 70vh; overflow-y: auto; padding-right: 10px;">
+                <div class="doc-section">
+                    <h4>Endpoint</h4>
+                    <div class="code-block">
+                        <span class="method-tag">GET</span> <span
+                            id="doc-endpoint">https://api.gateway.com/v1/service</span>
+                    </div>
+                </div>
+                <div class="doc-section">
+                    <h4>Authentication</h4>
+                    <p style="font-size: 14px; color: #64748b; margin-bottom: 10px;">Include your unique Service Key in
+                        the headers of your request.</p>
+                    <div class="code-block">
+                        X-API-KEY: <span id="doc-service-key">ak_svc_xxxxxxxxxxxx</span>
+                    </div>
+                </div>
+                <div class="doc-section">
+                    <h4>Example Request</h4>
+                    <div class="code-block">
+                        <pre id="doc-example-request">curl -X GET "https://api.gateway.com/v1/data" \
+  -H "X-API-KEY: ak_svc_your_key"</pre>
+                    </div>
+                </div>
+                <div class="doc-section">
+                    <h4>Example Response</h4>
+                    <div class="code-block">
+                        <pre id="doc-example-response">{
+  "status": "success",
+  "data": { ... }
+}</pre>
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 25px; text-align: right;">
+                <button onclick="toggleDocModal(false)">Close Documentation</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PURCHASE SUCCESS MODAL -->
+    <div id="success-modal" class="modal-overlay">
+        <div class="modal-content" style="text-align: center;">
+            <div style="font-size: 48px; margin-bottom: 20px;">🎉</div>
+            <h2 style="margin-bottom: 10px;">Purchase Successful!</h2>
+            <p style="color: #64748b; margin-bottom: 20px;">You have successfully requested access. Your unique API key
+                is generated.</p>
+            <div
+                style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 25px;">
+                <label
+                    style="font-size: 11px; font-weight: 700; color: #64748b; display: block; margin-bottom: 8px;">UNIQUE
+                    SERVICE KEY</label>
+                <code id="success-api-key"
+                    style="font-size: 16px; font-weight: 700; color: #10b981; font-family: monospace;">ak_svc_xxxxxxxx</code>
+            </div>
+            <button style="width: 100%;" onclick="toggleSuccessModal(false)">Go to Dashboard</button>
+        </div>
+    </div>
 </body>
 
 </html>

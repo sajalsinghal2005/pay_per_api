@@ -251,9 +251,11 @@ app.post('/api/apis/purchase', async (req, res) => {
         if (user.credits < api.price)
             return res.json({ success: false, message: 'Insufficient credits' });
 
+        const uniqueSvcKey = 'ak_svc_' + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+
         await dbRun(
-            "INSERT INTO user_apis(user_id,api_id) VALUES(?,?)",
-            [userId, apiId]
+            "INSERT INTO user_apis(user_id,api_id,api_key) VALUES(?,?,?)",
+            [userId, apiId, uniqueSvcKey]
         );
 
         await dbRun(
@@ -266,7 +268,7 @@ app.post('/api/apis/purchase', async (req, res) => {
             [userId, 'purchase', api.price, `Purchased ${api.name}`]
         );
 
-        res.json({ success: true, message: 'API Purchased Successfully' });
+        res.json({ success: true, message: 'API Purchased Successfully', api_key: uniqueSvcKey });
 
     } catch (err) {
         res.json({ success: false, message: err.message });
@@ -285,7 +287,7 @@ app.get('/api/user/:id/dashboard', async (req, res) => {
         );
 
         const apis = await dbAll(`
-            SELECT a.id as apiId, a.name, a.category, ua.id as userApiId
+            SELECT a.id as apiId, a.name, a.category, a.badge, ua.id as userApiId, ua.api_key
             FROM user_apis ua
             JOIN apis a ON ua.api_id=a.id
             WHERE ua.user_id=?`,

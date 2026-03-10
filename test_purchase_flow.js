@@ -5,7 +5,7 @@ function postRequest(path, data) {
         const postData = JSON.stringify(data);
         const options = {
             hostname: 'localhost',
-            port: 3000,
+            port: 3001,
             path: path,
             method: 'POST',
             headers: {
@@ -26,7 +26,7 @@ function postRequest(path, data) {
 
 function getRequest(path) {
     return new Promise((resolve, reject) => {
-        const req = http.get(`http://localhost:3000${path}`, (res) => {
+        const req = http.get(`http://localhost:3001${path}`, (res) => {
             let body = '';
             res.on('data', chunk => body += chunk);
             res.on('end', () => resolve(JSON.parse(body)));
@@ -37,10 +37,20 @@ function getRequest(path) {
 
 async function runTest() {
     try {
-        console.log("1. Registering User...");
         const email = 'buyer' + Math.floor(Math.random() * 1000) + '@test.com';
-        const reg = await postRequest('/api/auth/register', {
-            firstName: 'Buyer', lastName: 'Test', email: email, contact: '000', password: 'pass'
+        
+        console.log("1. Sending OTP...");
+        const otpRes = await postRequest('/send-otp', { email });
+        console.log("OTP sent:", otpRes);
+        
+        console.log("2. Registering User...");
+        const reg = await postRequest('/register', {
+            firstName: 'Buyer', 
+            lastName: 'Test', 
+            email: email, 
+            contact: '000', 
+            password: 'pass',
+            otp: '123456'  // Default OTP for testing
         });
         console.log("Registration:", reg);
         if (!reg.success) throw new Error("Registration failed");
