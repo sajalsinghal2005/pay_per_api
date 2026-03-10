@@ -558,7 +558,16 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email, password })
                     });
+
                     const data = await res.json();
+
+                    if (!res.ok) {
+                        showToast(data.message || "Login failed", "error");
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = "Sign In";
+                        return;
+                    }
+
                     if (data.success && data.requireOtp) {
                         // Stage 1 pass, send OTP
                         await fetch(API_BASE_URL + '/send-otp', {
@@ -579,8 +588,10 @@
                         loginBtn.textContent = "Sign In";
                     }
                 } catch (err) {
-                    showToast("Server error", "error");
+                    console.error("Login fetch error:", err);
+                    showToast("Network error or server down", "error");
                     loginBtn.disabled = false;
+                    loginBtn.textContent = "Sign In";
                 }
             } else {
                 const otp = document.getElementById('login-otp').value;
