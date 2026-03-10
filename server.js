@@ -14,7 +14,10 @@ const transporter = nodemailer.createTransport({
     auth: {
         user: 'sajalsinghal62650@gmail.com',
         pass: 'mbexkymmjmukocsz'
-    }
+    },
+    connectionTimeout: 10000, // 10 seconds
+    greetingTimeout: 10000,   // 10 seconds
+    socketTimeout: 15000      // 15 seconds
 });
 
 const otpStore = {}; // In-memory OTP storage

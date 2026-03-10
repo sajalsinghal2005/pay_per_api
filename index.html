@@ -12,7 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
-        const API_BASE_URL = "https://pay-per-api-1.onrender.com"; // Relative path for local and production compatibility
+        const API_BASE_URL = ''; // Always use relative paths for reliability
 
         // Global Chart Instances to prevent reuse errors
         let userTrafficChartInstance = null;
@@ -444,7 +444,7 @@
                         body: JSON.stringify({ email })
                     });
                     const data = await res.json();
-                    if (data.success) {
+                    if (res.ok && data.success) {
                         showToast("Verification code sent to email!");
                         document.getElementById('signup-fields').style.display = 'none';
                         document.getElementById('otp-section').style.display = 'block';
@@ -453,7 +453,7 @@
                         window.isOtpSent = true;
                         startResendTimer('signup');
                     } else {
-                        showToast(data.message, "error");
+                        showToast(data.message || "Failed to send OTP", "error");
                         signupBtn.disabled = false;
                         signupBtn.textContent = "Send OTP";
                     }
@@ -521,9 +521,12 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email })
             });
-            if ((await res.json()).success) {
+            const data = await res.json();
+            if (res.ok && data.success) {
                 showToast("Code resent!");
                 startResendTimer('signup');
+            } else {
+                showToast(data.message || "Resend failed", "error");
             }
         });
 
@@ -535,9 +538,12 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email })
             });
-            if ((await res.json()).success) {
+            const data = await res.json();
+            if (res.ok && data.success) {
                 showToast("Code resent!");
                 startResendTimer('login');
+            } else {
+                showToast(data.message || "Resend failed", "error");
             }
         });
 
