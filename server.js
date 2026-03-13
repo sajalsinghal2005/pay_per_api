@@ -24,6 +24,11 @@ process.on('uncaughtException', (err) => {
 });
 
 // --- Nodemailer & OTP Configuration ---
+console.log('--- SMTP Configuration Check ---');
+console.log('GMAIL_USER:', process.env.GMAIL_USER ? 'Set' : 'NOT SET');
+console.log('GMAIL_APP_PASS:', process.env.GMAIL_APP_PASS ? 'Set' : 'NOT SET');
+console.log('-------------------------------');
+
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -160,10 +165,11 @@ app.post('/send-otp', async (req, res) => {
     try {
         console.log(`[OTP] Sending code ${otp} to ${email}...`);
         await transporter.sendMail(mailOptions);
+        console.log(`[OTP] Success: ${email}`);
         res.json({ success: true, message: 'OTP sent successfully' });
     } catch (error) {
-        console.error('Email error:', error.message);
-        res.status(500).json({ success: false, message: 'Failed to send email. Check your connection.' });
+        console.error('[OTP] Error detailed:', error);
+        res.status(500).json({ success: false, message: `Failed to send email: ${error.message}` });
     }
 });
 
