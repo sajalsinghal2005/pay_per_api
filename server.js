@@ -8,6 +8,15 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
 
+// Global Error Handlers to prevent crash
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception thrown:', err);
+});
+
 // --- Nodemailer & OTP Configuration ---
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -52,6 +61,63 @@ const dbAll = (sql, params = []) =>
         });
     });
 
+// Blockchain Verification Helper (Monad Testnet)
+const RPC_URL = 'https://testnet-rpc.monad.xyz/';
+const MY_WALLET_ADDRESS = "0x7894561230987456123098745612309874561230".toLowerCase();
+
+async function verifyBlockchainTransaction(txHash) {
+    try {
+        const response = await fetch(RPC_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: "2.0",
+                method: "eth_getTransactionByHash",
+                params: [txHash],
+                id: 1
+            })
+        });
+        const data = await response.json();
+        const tx = data.result;
+
+        if (!tx) return { success: false, message: "Transaction not found" };
+
+        // Verify recipient
+        if (tx.to && tx.to.toLowerCase() !== MY_WALLET_ADDRESS) {
+            return { success: false, message: "Invalid recipient" };
+        }
+
+        // Verify amount (0.001 ETH = 1e15 wei)
+        const valueWei = BigInt(tx.value);
+        const minWei = BigInt("1000000000000000"); // 0.001 ETH
+        if (valueWei < minWei) {
+            return { success: false, message: "Insufficient amount" };
+        }
+
+        // Check transaction receipt for status
+        const receiptResponse = await fetch(RPC_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: "2.0",
+                method: "eth_getTransactionReceipt",
+                params: [txHash],
+                id: 2
+            })
+        });
+        const receiptData = await receiptResponse.json();
+        const receipt = receiptData.result;
+
+        if (!receipt) return { success: false, message: "Transaction pending or not found" };
+        if (receipt.status !== "0x1") return { success: false, message: "Transaction failed" };
+
+        return { success: true };
+    } catch (err) {
+        console.error("Blockchain verification error:", err);
+        return { success: false, message: "Verification service error" };
+    }
+}
+
 /* =========================
    AUTH
 ========================= */
@@ -86,7 +152,7 @@ app.post('/send-otp', async (req, res) => {
     };
 
     try {
-        console.log(`[OTP] Sending to ${email}...`);
+        console.log(`[OTP] Sending code ${otp} to ${email}...`);
         await transporter.sendMail(mailOptions);
         res.json({ success: true, message: 'OTP sent successfully' });
     } catch (error) {
@@ -98,6 +164,12 @@ app.post('/send-otp', async (req, res) => {
 // 2. Verify OTP (General)
 app.post('/verify-otp', (req, res) => {
     const { email, otp } = req.body;
+    
+    // Hackathon Shortcut for Admin
+    if (email === 'admin@admin.com' && otp === '123456') {
+        return res.json({ success: true, message: 'Admin Master Key Verified' });
+    }
+
     const record = otpStore[email];
 
     if (!record) return res.status(400).json({ success: false, message: 'OTP expired or not requested' });
@@ -188,8 +260,15 @@ app.post('/api/auth/register', (req, res) => res.redirect(307, '/register'));
 app.post('/api/auth/send-otp', (req, res) => res.redirect(307, '/send-otp'));
 app.post('/api/auth/verify-otp', (req, res) => res.redirect(307, '/verify-otp'));
 app.post('/api/auth/login-confirm', (req, res) => {
-    // Handling confirm login similarly
     const { email, otp } = req.body;
+
+    // Master OTP for Demo
+    if (email === 'admin@admin.com' && otp === '123456') {
+        return dbGet("SELECT * FROM users WHERE email=?", [email]).then(user => {
+            res.json({ success: true, user });
+        });
+    }
+
     const record = otpStore[email];
     if (!record || record.otp !== otp) return res.status(400).json({ success: false, message: 'Invalid OTP' });
     delete otpStore[email];
@@ -277,6 +356,58 @@ app.post('/api/apis/purchase', async (req, res) => {
         res.json({ success: false, message: err.message });
     }
 });
+
+app.post('/api/apis/purchase-crypto', async (req, res) => {
+    const { userId, apiId, txHash, walletAddress } = req.body;
+
+    try {
+        const api = await dbGet("SELECT * FROM apis WHERE id=? AND status='active'", [apiId]);
+        if (!api) return res.json({ success: false, message: 'API unavailable' });
+
+        const user = await dbGet("SELECT * FROM users WHERE id=?", [userId]);
+        if (!user) return res.json({ success: false, message: 'User not found' });
+
+        // Check for duplicate transaction hash
+        if (txHash) {
+            const duplicateTx = await dbGet("SELECT id FROM transactions WHERE tx_hash=?", [txHash]);
+            if (duplicateTx) return res.json({ success: false, message: 'Transaction already processed' });
+        }
+
+        const verification = await verifyBlockchainTransaction(txHash);
+        if (!verification.success) {
+            return res.json({ success: false, message: verification.message });
+        }
+        if (!verification.success) {
+            return res.json({ success: false, message: verification.message });
+        }
+
+        const discountedPrice = Math.floor(api.price * 0.8);
+
+        const existing = await dbGet(
+            "SELECT * FROM user_apis WHERE user_id=? AND api_id=?",
+            [userId, apiId]
+        );
+        if (existing) return res.json({ success: false, message: 'Already purchased' });
+
+        const uniqueSvcKey = 'ak_svc_' + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+
+        await dbRun(
+            "INSERT INTO user_apis(user_id,api_id,api_key) VALUES(?,?,?)",
+            [userId, apiId, uniqueSvcKey]
+        );
+
+        await dbRun(
+            "INSERT INTO transactions(user_id,type,amount,description,tx_hash) VALUES(?,?,?,?,?)",
+            [userId, 'purchase', discountedPrice, `Purchased ${api.name} via MetaMask`, txHash]
+        );
+
+        res.json({ success: true, message: 'API Purchased via Blockchain!', api_key: uniqueSvcKey });
+
+    } catch (err) {
+        res.json({ success: false, message: err.message });
+    }
+});
+
 
 /* =========================
    USER DASHBOARD
@@ -465,6 +596,34 @@ app.post('/api/user/:id/topup', async (req, res) => {
     }
 });
 
+app.post('/api/user/:id/topup-crypto', async (req, res) => {
+    const { amount, txHash } = req.body;
+    try {
+        if (!txHash) return res.json({ success: false, message: 'Transaction hash is required' });
+
+        // Check for duplicate
+        const duplicateTx = await dbGet("SELECT id FROM transactions WHERE tx_hash=?", [txHash]);
+        if (duplicateTx) return res.json({ success: false, message: 'Transaction already processed' });
+
+        const verification = await verifyBlockchainTransaction(txHash);
+        if (!verification.success) {
+            return res.json({ success: false, message: verification.message });
+        }
+
+        await dbRun("UPDATE users SET credits = credits + ? WHERE id=?", [amount, req.params.id]);
+
+        // Log transaction
+        await dbRun(
+            "INSERT INTO transactions (user_id, type, amount, description, tx_hash) VALUES (?, ?, ?, ?, ?)",
+            [req.params.id, 'topup', amount, `Wallet Top-up via MetaMask`, txHash]
+        );
+
+        res.json({ success: true, message: `Successfully added ₹${amount} to your wallet via Crypto!` });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 app.post('/api/user/:id/subscription/upgrade', async (req, res) => {
     try {
         const user = await dbGet("SELECT credits FROM users WHERE id=?", [req.params.id]);
@@ -494,7 +653,7 @@ app.get('/api/admin/stats', async (req, res) => {
     try {
 
         const revenue = await dbGet(
-            "SELECT SUM(amount) as total FROM transactions WHERE type='topup'"
+            "SELECT SUM(amount) as total FROM transactions WHERE type='topup' OR tx_hash IS NOT NULL"
         );
 
         const users = await dbAll(`
@@ -629,7 +788,7 @@ app.post('/api/admin/apis/:id/status', async (req, res) => {
 app.get('/api/admin/billing', async (req, res) => {
     try {
         const transactions = await dbAll(`
-            SELECT t.id, t.type, t.amount, t.date, u.email as userEmail 
+            SELECT t.id, t.type, t.amount, t.date, t.description, t.tx_hash, u.email as userEmail 
             FROM transactions t
             LEFT JOIN users u ON t.user_id = u.id
             ORDER BY t.date DESC

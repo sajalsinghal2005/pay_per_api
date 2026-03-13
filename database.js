@@ -87,10 +87,15 @@ db.serialize(() => {
             type TEXT,
             amount INTEGER,
             description TEXT,
+            tx_hash TEXT,
             date DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     `);
+
+    // Add missing tx_hash column if transactions table already existed
+    db.run("ALTER TABLE transactions ADD COLUMN tx_hash TEXT", () => { });
+
 
     /* =========================
        SETTINGS TABLE (Global Config)
@@ -122,7 +127,7 @@ db.serialize(() => {
                     'admin@admin.com',
                     'admin',
                     'admin',
-                    1000000,
+                    5000,
                     'ak_live_admin_master_key',
                     'active'
                 ]);
@@ -206,6 +211,7 @@ db.serialize(() => {
                 'Security',
                 150,
                 'https://images.unsplash.com/photo-1563986768609-322da13575f3?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -217,6 +223,7 @@ db.serialize(() => {
                 'AI',
                 300,
                 'https://images.unsplash.com/photo-1507146426996-ef05306b995a?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -227,6 +234,7 @@ db.serialize(() => {
                 'Blockchain',
                 450,
                 'https://images.unsplash.com/photo-1518546305927-5a555bb7020d?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -237,6 +245,7 @@ db.serialize(() => {
                 'E-commerce',
                 120,
                 'https://images.unsplash.com/photo-1553413077-190dd305871c?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -247,6 +256,7 @@ db.serialize(() => {
                 'Gaming',
                 80,
                 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -257,6 +267,7 @@ db.serialize(() => {
                 'Health',
                 500,
                 'https://images.unsplash.com/photo-1505751172876-fa1923c5c528?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -267,6 +278,7 @@ db.serialize(() => {
                 'IoT',
                 180,
                 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -277,6 +289,7 @@ db.serialize(() => {
                 'Social',
                 220,
                 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -287,6 +300,7 @@ db.serialize(() => {
                 'Utility',
                 100,
                 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -297,6 +311,7 @@ db.serialize(() => {
                 'Environment',
                 60,
                 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -307,6 +322,7 @@ db.serialize(() => {
                 'DevTools',
                 140,
                 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?q=80&w=600',
+                null,
                 'active'
             );
 
@@ -317,6 +333,7 @@ db.serialize(() => {
                 'Finance',
                 350,
                 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=600',
+                null,
                 'active'
             );
 

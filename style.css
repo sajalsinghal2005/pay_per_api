@@ -449,11 +449,10 @@ button:active {
 
 .category-filter {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 30px;
-    overflow-x: auto;
     padding-bottom: 8px;
-    scrollbar-width: none;
 }
 
 .category-filter::-webkit-scrollbar {
@@ -1525,4 +1524,26 @@ button.danger:hover {
     margin-top: 10px;
     font-size: 15px;
     letter-spacing: 0.2px;
+}
+.payment-source-btn {
+    background: white;
+    border: 2px solid #f1f5f9;
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #1e293b;
+    width: 100%;
+}
+
+.payment-source-btn:hover {
+    border-color: #cbd5e1;
+}
+
+.payment-source-btn.active {
+    border-color: #1f4ed8;
+    background: #eff6ff;
 }

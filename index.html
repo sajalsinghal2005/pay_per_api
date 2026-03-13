@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -51,14 +51,140 @@
             }
         };
 
+        window.selectPurchaseMethod = (method) => {
+            window.selectedPurchaseMethod = method;
+            const creditBtn = document.getElementById('pay-credit-btn');
+            const cryptoBtn = document.getElementById('pay-crypto-btn');
+            const walletSection = document.getElementById('metamask-wallet-section');
+            const executeBtn = document.getElementById('execute-purchase-btn');
+
+            if (method === 'credits') {
+                creditBtn.classList.add('active');
+                cryptoBtn.classList.remove('active');
+                walletSection.style.display = 'none';
+                executeBtn.textContent = "Confirm Purchase";
+            } else {
+                creditBtn.classList.remove('active');
+                cryptoBtn.classList.add('active');
+                walletSection.style.display = 'block';
+                executeBtn.textContent = "Pay with MetaMask";
+                checkMetaMask();
+            }
+        };
+
+        window.checkMetaMask = async () => {
+            const statusEl = document.getElementById('metamask-status');
+            const addrEl = document.getElementById('metamask-address');
+            const connectBtn = document.getElementById('connect-wallet-btn');
+
+            if (typeof window.ethereum !== 'undefined') {
+                statusEl.textContent = "MetaMask Detected";
+                statusEl.style.color = "#10b981";
+                
+                const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                if (accounts.length > 0) {
+                    addrEl.textContent = accounts[0].substring(0, 6) + '...' + accounts[0].substring(38);
+                    connectBtn.style.display = 'none';
+                    window.userWalletAddress = accounts[0];
+                } else {
+                    addrEl.textContent = "Not Connected";
+                    connectBtn.style.display = 'block';
+                }
+            } else {
+                statusEl.textContent = "MetaMask Not Installed";
+                statusEl.style.color = "#ef4444";
+                connectBtn.textContent = "Install MetaMask";
+                connectBtn.onclick = () => window.open('https://metamask.io/download/', '_blank');
+            }
+        };
+
+        window.connectWallet = async () => {
+            try {
+                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                if (accounts.length > 0) {
+                    showToast("Wallet Connected!");
+                    checkMetaMask();
+                }
+            } catch (err) {
+                showToast("Connection failed: " + err.message, "error");
+            }
+        };
+
+        window.payWithMetaMask = async () => {
+            if (typeof ethers === 'undefined') {
+                return showToast("Blockchain library still loading, please wait...", "error");
+            }
+            if (!window.userWalletAddress) {
+                return showToast("Please connect MetaMask first", "error");
+            }
+
+            const executeBtn = document.getElementById('execute-purchase-btn');
+            executeBtn.disabled = true;
+            executeBtn.textContent = "Confirming in MetaMask...";
+
+            try {
+                const provider = new ethers.providers.Web3Provider(window.ethereum);
+                const signer = provider.getSigner();
+                
+                // Minimum amount 0.001 ETH
+                const amount = ethers.utils.parseEther("0.001");
+                const receiverAddress = "0x7894561230987456123098745612309874561230"; // Mock owner address
+
+                const tx = await signer.sendTransaction({
+                    to: receiverAddress,
+                    value: amount
+                });
+
+                showToast("Transaction Sent! Waiting for confirmation...");
+                executeBtn.textContent = "Confirming on Blockchain...";
+                
+                const receipt = await tx.wait();
+                
+                showToast("Confirmed! Verifying on server...");
+                executeBtn.textContent = "Verifying Transaction...";
+
+                const res = await fetch(API_BASE_URL + '/api/apis/purchase-crypto', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        userId: currentUser.id, 
+                        apiId: window.pendingPurchaseApiId,
+                        txHash: tx.hash,
+                        walletAddress: window.userWalletAddress
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    togglePurchaseModal(false);
+                    toggleSuccessModal(true, data.api_key);
+                    loadUserDashboard();
+                    loadUserBilling();
+                } else {
+                    showToast("Verification Failed: " + data.message, "error");
+                }
+            } catch (err) {
+                showToast("Payment Failed: " + err.message, "error");
+            } finally {
+                executeBtn.disabled = false;
+                executeBtn.textContent = window.selectedPurchaseMethod === 'crypto' ? "Pay with MetaMask" : "Confirm Purchase";
+            }
+        };
+
         window.togglePurchaseModal = (show, apiData = null) => {
             const modal = document.getElementById('purchase-confirm-modal');
             if (show && apiData) {
                 document.getElementById('modal-api-name').textContent = apiData.name;
                 document.getElementById('modal-api-price').textContent = `₹${apiData.price}`;
+                // Crypto discount: 0.001 ETH minimum or 20% off
+                const cryptoPrice = "0.001 ETH"; 
+                document.getElementById('modal-crypto-price').textContent = cryptoPrice;
                 document.getElementById('modal-api-img').src = apiData.image || 'https://via.placeholder.com/300';
                 window.pendingPurchaseApiId = apiData.id;
                 modal.classList.add('active');
+                
+                // Reset payment selection
+                selectPurchaseMethod('credits');
             } else {
                 modal.classList.remove('active');
             }
@@ -1137,6 +1263,10 @@
             const apiId = window.pendingPurchaseApiId;
             if (!apiId) return;
 
+            if (window.selectedPurchaseMethod === 'crypto') {
+                return payWithMetaMask();
+            }
+
             togglePurchaseModal(false);
 
             try {
@@ -1148,7 +1278,6 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    // showToast("Success! " + data.message);
                     toggleSuccessModal(true, data.api_key);
                     loadUserDashboard();
                     loadUserBilling();
@@ -1816,30 +1945,47 @@ Thank you for using API Hub.
 
     <!-- Purchase Confirmation Modal -->
     <div id="purchase-confirm-modal" class="modal-overlay">
-        <div class="modal-content" style="text-align: center;">
-            <div
-                style="width: 80px; height: 80px; background: #eff6ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
-                <span style="font-size: 40px;">💳</span>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Confirm API Access</h3>
+                <button class="close-modal" onclick="togglePurchaseModal(false)">&times;</button>
             </div>
-            <h2 style="margin-bottom: 8px;">Confirm Purchase</h2>
-            <p style="color: #64748b; margin-bottom: 24px;">Would you like to purchase access to this API?</p>
-
-            <div
-                style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 24px; display: flex; align-items: center; gap: 16px; text-align: left;">
-                <img id="modal-api-img" src=""
-                    style="width: 50px; height: 50px; border-radius: 8px; object-fit: cover;">
-                <div style="flex: 1;">
-                    <h4 id="modal-api-name" style="margin: 0; font-size: 16px;">API Name</h4>
-                    <span id="modal-api-price" style="color: #2563eb; font-weight: 700;">₹100</span>
+            
+            <div style="display: flex; gap: 15px; align-items: start; margin-bottom: 25px;">
+                <img id="modal-api-img" src="" style="width: 80px; height: 80px; border-radius: 12px; object-fit: cover; border: 1px solid #e2e8f0;">
+                <div style="flex: 1; text-align: left;">
+                    <h2 id="modal-api-name" style="margin: 0; font-size: 18px; color: #1e293b;">API Name</h2>
+                    <p style="color: #64748b; font-size: 13px; margin: 5px 0;">Unlock lifetime access to this service.</p>
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;">
-                <button onclick="togglePurchaseModal(false)"
-                    style="background: #f1f5f9; color: #475569; margin: 0;">Cancel</button>
-                <button onclick="executePurchase()" style="background: #2563eb; color: white; margin: 0;">Confirm
-                    Purchase</button>
+            <label style="display: block; font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 12px; text-align: left;">Choose Payment Method</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 25px;">
+                <button id="pay-credit-btn" class="payment-source-btn active" onclick="selectPurchaseMethod('credits')">
+                    <span style="font-size: 20px;">💳</span>
+                    <div style="text-align: left;">
+                        <div style="font-weight: 700; font-size: 13px;">Wallet Credits</div>
+                        <div id="modal-api-price" style="font-size: 11px; opacity: 0.8;">₹ 0</div>
+                    </div>
+                </button>
+                <button id="pay-crypto-btn" class="payment-source-btn" onclick="selectPurchaseMethod('crypto')">
+                    <span style="font-size: 20px;">🦊</span>
+                    <div style="text-align: left;">
+                        <div style="font-weight: 700; font-size: 13px;">MetaMask</div>
+                        <div id="modal-crypto-price" style="font-size: 11px; opacity: 0.8;">0.001 ETH</div>
+                    </div>
+                </button>
             </div>
+
+            <div id="metamask-wallet-section" style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 25px; display: none; text-align: left;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span id="metamask-status" style="font-size: 12px; font-weight: 600;">Detecting MetaMask...</span>
+                    <span id="metamask-address" style="font-family: monospace; font-size: 11px; color: #475569;">Not Connected</span>
+                </div>
+                <button id="connect-wallet-btn" class="small" style="width: 100%; height: 38px; border-radius: 8px; font-weight: 600; background: white; border: 1px solid #cbd5e1; color: #1e293b;" onclick="connectWallet()">Connect MetaMask</button>
+            </div>
+
+            <button id="execute-purchase-btn" style="width: 100%; height: 50px; border-radius: 12px; font-size: 16px; font-weight: 700; background: #1f4ed8; color: white;" onclick="executePurchase()">Confirm Purchase</button>
         </div>
     </div>
 
@@ -2327,6 +2473,18 @@ Thank you for using API Hub.
                         <button class="cat-btn" onclick="filterCategory('Payments', this)">Payments</button>
                         <button class="cat-btn" onclick="filterCategory('Storage', this)">Storage</button>
                         <button class="cat-btn" onclick="filterCategory('Analytics', this)">Analytics</button>
+                        <button class="cat-btn" onclick="filterCategory('Security', this)">Security</button>
+                        <button class="cat-btn" onclick="filterCategory('AI', this)">AI</button>
+                        <button class="cat-btn" onclick="filterCategory('Blockchain', this)">Blockchain</button>
+                        <button class="cat-btn" onclick="filterCategory('E-commerce', this)">E-comm</button>
+                        <button class="cat-btn" onclick="filterCategory('Gaming', this)">Gaming</button>
+                        <button class="cat-btn" onclick="filterCategory('Health', this)">Health</button>
+                        <button class="cat-btn" onclick="filterCategory('IoT', this)">IoT</button>
+                        <button class="cat-btn" onclick="filterCategory('Social', this)">Social</button>
+                        <button class="cat-btn" onclick="filterCategory('Utility', this)">Utility</button>
+                        <button class="cat-btn" onclick="filterCategory('Environment', this)">Eco</button>
+                        <button class="cat-btn" onclick="filterCategory('DevTools', this)">DevTools</button>
+                        <button class="cat-btn" onclick="filterCategory('Finance', this)">Finance</button>
                     </div>
 
                     <div class="marketplace">
