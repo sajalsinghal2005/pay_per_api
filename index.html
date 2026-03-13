@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -590,7 +590,9 @@
                         window.isOtpSent = true;
                         startResendTimer('signup');
                     } else {
-                        showToast(data.message || "Failed to send OTP", "error");
+                        const errMsg = data.message || "Failed to send OTP";
+                        const errDetail = data.details ? ` (${data.details})` : "";
+                        showToast(errMsg + errDetail, "error");
                         signupBtn.disabled = false;
                         signupBtn.textContent = "Send OTP";
                     }

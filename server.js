@@ -23,15 +23,28 @@ process.on('uncaughtException', (err) => {
 });
 
 // --- Nodemailer & OTP Configuration ---
+// ✅ Use environment variables so credentials can be changed without editing code.
+const EMAIL_USER = process.env.EMAIL_USER || 'sajalsinghal62650@gmail.com';
+const EMAIL_PASS = process.env.EMAIL_PASS || 'mbexkymmjmukocsz';
+
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'sajalsinghal62650@gmail.com',
-        pass: 'mbexkymmjmukocsz'
+        user: EMAIL_USER,
+        pass: EMAIL_PASS
     },
     connectionTimeout: 10000, // 10 seconds
     greetingTimeout: 10000,   // 10 seconds
     socketTimeout: 15000      // 15 seconds
+});
+
+// Verify SMTP configuration at startup for easier debugging.
+transporter.verify((err, success) => {
+    if (err) {
+        console.error('[Email] SMTP verification failed:', err.message);
+    } else {
+        console.log('[Email] SMTP connection verified');
+    }
 });
 
 const otpStore = {}; // In-memory OTP storage
@@ -161,8 +174,9 @@ app.post('/send-otp', async (req, res) => {
         await transporter.sendMail(mailOptions);
         res.json({ success: true, message: 'OTP sent successfully' });
     } catch (error) {
-        console.error('Email error:', error.message);
-        res.status(500).json({ success: false, message: 'Failed to send email. Check your connection.' });
+        console.error('Email error:', error);
+        // Include error message in response for easier debugging (remove or sanitize in production)
+        res.status(500).json({ success: false, message: 'Failed to send email. Check your connection.', details: error?.message });
     }
 });
 
