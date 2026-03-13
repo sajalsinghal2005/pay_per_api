@@ -2,6 +2,7 @@ const express = require('express');
 const nodemailer = require('nodemailer');
 const cors = require('cors');
 const path = require('path');
+require('dotenv').config();
 const db = require('./database');
 
 const app = express();
@@ -26,8 +27,8 @@ process.on('uncaughtException', (err) => {
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'sajalsinghal62650@gmail.com',
-        pass: 'mbexkymmjmukocsz'
+        user: process.env.GMAIL_USER || 'sajalsinghal62650@gmail.com',
+        pass: process.env.GMAIL_APP_PASS || 'mbexkymmjmukocsz'
     },
     connectionTimeout: 10000, // 10 seconds
     greetingTimeout: 10000,   // 10 seconds
@@ -141,7 +142,7 @@ app.post('/send-otp', async (req, res) => {
     otpStore[email] = { otp, expiresAt };
 
     const mailOptions = {
-        from: '"API Hub Support" <sajalsinghal62650@gmail.com>',
+        from: `"API Hub Support" <${process.env.GMAIL_USER || 'sajalsinghal62650@gmail.com'}>`,
         to: email,
         subject: 'Verification Code',
         html: `
