@@ -1,5 +1,5 @@
 const express = require('express');
-const { Resend } = require('resend');
+
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
@@ -23,12 +23,7 @@ process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception thrown:', err);
 });
 
-// --- Resend & OTP Configuration ---
-const resend = new Resend(process.env.RESEND_API_KEY);
 
-const otpStore = {}; // In-memory OTP storage
-
-const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 /* =========================
    DB HELPERS
@@ -123,91 +118,6 @@ async function verifyBlockchainTransaction(txHash) {
    AUTH SYSTEM (UNIFIED)
 ========================= */
 
-/**
- * Sends an OTP email for user verification using Resend.
- * @param {string} email - The recipient's email address.
- * @param {string} otp - The one-time password to send.
- * @returns {Promise<boolean>} - True if sent successfully, false otherwise.
- */
-async function sendOTP(email, otp) {
-    if (!process.env.RESEND_API_KEY) {
-         console.error("[-] Missing RESEND_API_KEY configuration. Email not sent.");
-         return false;
-    }
-
-    try {
-        console.log(`[OTP] Sending verification code ${otp} to ${email} via Resend...`);
-        
-        const { data, error } = await resend.emails.send({
-            from: 'onboarding@resend.dev',
-            to: email,
-            subject: 'OTP Verification',
-            html: `Your OTP is: ${otp}`
-        });
-
-        if (error) {
-            console.error(`[-] Failed to send OTP to ${email}. Resend error details:`, error);
-            return false;
-        }
-
-        console.log(`[OTP] Successfully sent email to: ${email}. Message ID: ${data.id}`);
-        return true;
-    } catch (error) {
-        console.error(`[-] Unexpected error sending OTP to ${email}:`, error);
-        return false;
-    }
-}
-
-// 1. Send OTP Route
-app.post('/send-otp', async (req, res) => {
-    const { email } = req.body;
-    
-    if (!email) {
-        return res.status(400).json({ success: false, message: 'Email is required' });
-    }
-
-    // Generate and store OTP
-    const otp = generateOTP();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes validity
-    otpStore[email] = { otp, expiresAt };
-
-    // Send email using our robust helper function
-    const isSent = await sendOTP(email, otp);
-
-    if (isSent) {
-        res.json({ success: true, message: 'OTP sent successfully' });
-    } else {
-        // Delete the unused OTP record since it failed to send
-         delete otpStore[email];
-         res.status(500).json({ success: false, message: 'Failed to send verification email. Please try again later.' });
-    }
-});
-
-// 2. Verify OTP (General)
-app.post('/verify-otp', (req, res) => {
-    const { email, otp } = req.body;
-
-    // Hackathon Shortcut for Admin
-    if (email === 'admin@admin.com' && otp === '123456') {
-        return res.json({ success: true, message: 'Admin Master Key Verified' });
-    }
-
-    const record = otpStore[email];
-
-    if (!record) return res.status(400).json({ success: false, message: 'OTP expired or not requested' });
-    if (Date.now() > record.expiresAt) {
-        delete otpStore[email];
-        return res.status(400).json({ success: false, message: 'OTP expired' });
-    }
-
-    if (record.otp === otp) {
-        // Keep the record for the final action (register/login/reset)
-        res.json({ success: true, message: 'OTP verified' });
-    } else {
-        res.status(400).json({ success: false, message: 'Invalid OTP code' });
-    }
-});
-
 // 3. Login
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
@@ -216,8 +126,7 @@ app.post('/login', async (req, res) => {
         if (!user) return res.status(401).json({ success: false, message: 'Invalid email or password' });
         if (user.status === 'suspended') return res.status(403).json({ success: false, message: 'Account suspended' });
 
-        // Trigger OTP for login security
-        res.json({ success: true, requireOtp: true, message: 'Credentials valid. Please verify OTP.' });
+        res.json({ success: true, user, message: 'Login successful.' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -225,11 +134,7 @@ app.post('/login', async (req, res) => {
 
 // 4. Registration
 app.post('/register', async (req, res) => {
-    const { firstName, lastName, email, contact, password, otp } = req.body;
-    const record = otpStore[email];
-
-    if (!record || record.otp !== otp) return res.status(400).json({ success: false, message: 'OTP verification failed' });
-    delete otpStore[email];
+    const { firstName, lastName, email, contact, password } = req.body;
 
     const apiKey = 'ak_live_' + Math.random().toString(36).substring(2);
 
@@ -253,8 +158,7 @@ app.post('/forgot-password', async (req, res) => {
         const user = await dbGet("SELECT id FROM users WHERE email=?", [email]);
         if (!user) return res.status(404).json({ success: false, message: 'No account with this email' });
 
-        // Trigger OTP
-        res.json({ success: true, userId: user.id, message: 'User found. Please verify OTP to reset.' });
+        res.json({ success: true, userId: user.id, message: 'User found.' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -262,11 +166,7 @@ app.post('/forgot-password', async (req, res) => {
 
 // 6. Reset Password
 app.post('/reset-password', async (req, res) => {
-    const { userId, email, otp, newPassword } = req.body;
-    const record = otpStore[email];
-
-    if (!record || record.otp !== otp) return res.status(400).json({ success: false, message: 'Invalid OTP' });
-    delete otpStore[email];
+    const { userId, email, newPassword } = req.body;
 
     try {
         await dbRun("UPDATE users SET password=? WHERE id=?", [newPassword, userId]);
@@ -274,29 +174,6 @@ app.post('/reset-password', async (req, res) => {
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
-});
-
-// Compatibility shim for existing frontend if needed (mapping old api/auth to new routes)
-app.post('/api/auth/login', (req, res) => res.redirect(307, '/login'));
-app.post('/api/auth/register', (req, res) => res.redirect(307, '/register'));
-app.post('/api/auth/send-otp', (req, res) => res.redirect(307, '/send-otp'));
-app.post('/api/auth/verify-otp', (req, res) => res.redirect(307, '/verify-otp'));
-app.post('/api/auth/login-confirm', (req, res) => {
-    const { email, otp } = req.body;
-
-    // Master OTP for Demo
-    if (email === 'admin@admin.com' && otp === '123456') {
-        return dbGet("SELECT * FROM users WHERE email=?", [email]).then(user => {
-            res.json({ success: true, user });
-        });
-    }
-
-    const record = otpStore[email];
-    if (!record || record.otp !== otp) return res.status(400).json({ success: false, message: 'Invalid OTP' });
-    delete otpStore[email];
-    dbGet("SELECT * FROM users WHERE email=?", [email]).then(user => {
-        res.json({ success: true, user });
-    });
 });
 
 
