@@ -38,7 +38,7 @@ const transporter = nodemailer.createTransport({
         pass: process.env.GMAIL_APP_PASS || 'mbexkymmjmukocsz'
     },
     // Pool prevents Render connection drops/timeouts
-    pool: true, 
+    pool: true,
     maxConnections: 1,
     maxMessages: 10,
     connectionTimeout: 20000, // 20 seconds
@@ -182,7 +182,7 @@ app.post('/send-otp', async (req, res) => {
 // 2. Verify OTP (General)
 app.post('/verify-otp', (req, res) => {
     const { email, otp } = req.body;
-    
+
     // Hackathon Shortcut for Admin
     if (email === 'admin@admin.com' && otp === '123456') {
         return res.json({ success: true, message: 'Admin Master Key Verified' });
