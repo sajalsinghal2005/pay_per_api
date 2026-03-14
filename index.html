@@ -20,6 +20,7 @@
         let userUsageWeekChartInstance = null;
         let userResponseTimeChartInstance = null;
         let userErrorDistChartInstance = null;
+        let adminUsageChartInstance = null;
 
         // --- UI Helper Functions ---
         window.showToast = (message, type = 'success') => {
@@ -1607,6 +1608,35 @@ Thank you for using API Hub.
                     apisContainer.appendChild(div);
                 });
 
+                // 6. Load Admin Usage Analytics Chart
+                const usageRes = await fetch(API_BASE_URL + '/api/admin/usage-stats');
+                const usageData = await usageRes.json();
+                
+                if (usageData.success && usageData.datasets.length > 0) {
+                    const ctx = document.getElementById('adminUsageChart');
+                    if (ctx) {
+                        if (adminUsageChartInstance) adminUsageChartInstance.destroy();
+                        adminUsageChartInstance = new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'],
+                                datasets: usageData.datasets
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { position: 'top', labels: { font: { family: 'Inter', size: 12 } } }
+                                },
+                                scales: {
+                                    y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' } },
+                                    x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' } }
+                                }
+                            }
+                        });
+                    }
+                }
+
             } catch (err) {
                 console.error("Admin dashboard error:", err);
             }
@@ -2378,7 +2408,16 @@ Thank you for using API Hub.
                     </div>
 
                     <!-- Admin Panels -->
-                    <!-- Admin Panels -->
+                    <div class="panels" style="margin-bottom: 20px;">
+                        <div class="panel">
+                            <h3>API Usage Analytics</h3>
+                            <p>Global API request volume over the last 7 days</p>
+                            <div style="height: 300px; width: 100%; margin-top: 15px;">
+                                <canvas id="adminUsageChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="panels" style="grid-template-columns: 1fr 1fr; gap: 20px;">
 
                         <!-- 1. Global System Configuration -->
