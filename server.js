@@ -703,6 +703,56 @@ app.put('/api/admin/apis/:id', async (req, res) => {
     }
 });
 
+app.post('/api/apis/purchase-credits', async (req, res) => {
+    const { userId, apiId } = req.body;
+    try {
+        const user = await dbGet(`SELECT credits FROM users WHERE id = ?`, [userId]);
+        const api = await dbGet(`SELECT name, price FROM apis WHERE id = ?`, [apiId]);
+
+        if (!user || !api) return res.status(404).json({ success: false, message: 'User or API not found' });
+        if (user.credits < api.price) return res.status(400).json({ success: false, message: 'Insufficient wallet balance.' });
+
+        const existing = await dbGet(`SELECT id FROM user_apis WHERE user_id = ? AND api_id = ?`, [userId, apiId]);
+        if (existing) return res.status(400).json({ success: false, message: 'You already own this API.' });
+
+        const newBalance = user.credits - api.price;
+        const generatedApiKey = 'AK_LIVE_' + Math.random().toString(36).substring(2).toUpperCase();
+
+        await dbRun(`UPDATE users SET credits = ? WHERE id = ?`, [newBalance, userId]);
+        await dbRun(`INSERT INTO user_apis (user_id, api_id, api_key) VALUES (?, ?, ?)`, [userId, apiId, generatedApiKey]);
+        await dbRun(
+            `INSERT INTO transactions (user_id, type, amount, description) VALUES (?, 'purchase', ?, ?)`,
+            [userId, api.price, `Purchased API: ${api.name}`]
+        );
+
+        res.json({ success: true, message: 'Purchase successful!', newBalance, api_key: generatedApiKey });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post('/api/apis/purchase-crypto', async (req, res) => {
+    const { userId, apiId, txHash, walletAddress } = req.body;
+    try {
+        const api = await dbGet(`SELECT name FROM apis WHERE id = ?`, [apiId]);
+
+        const existing = await dbGet(`SELECT id FROM user_apis WHERE user_id = ? AND api_id = ?`, [userId, apiId]);
+        if (existing) return res.status(400).json({ success: false, message: 'You already own this API.' });
+
+        const generatedApiKey = 'AK_LIVE_CRYPTO_' + Math.random().toString(36).substring(2).toUpperCase();
+
+        await dbRun(`INSERT INTO user_apis (user_id, api_id, api_key) VALUES (?, ?, ?)`, [userId, apiId, generatedApiKey]);
+        await dbRun(
+            `INSERT INTO transactions (user_id, type, amount, description, tx_hash) VALUES (?, 'purchase', ?, ?, ?)`,
+            [userId, 0, `Purchased API (Crypto): ${api.name} from ${walletAddress}`, txHash]
+        );
+
+        res.json({ success: true, message: 'Purchase successful!', api_key: generatedApiKey });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 app.post('/api/admin/apis/:id/status', async (req, res) => {
     const { status } = req.body;
     try {

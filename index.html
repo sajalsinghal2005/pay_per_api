@@ -190,6 +190,46 @@
             }
         };
 
+        window.executePurchase = async () => {
+            if (window.selectedPurchaseMethod === 'crypto') {
+                return payWithMetaMask();
+            }
+
+            try {
+                const executeBtn = document.getElementById('execute-purchase-btn');
+                executeBtn.disabled = true;
+                executeBtn.textContent = 'Processing...';
+
+                const res = await fetch(API_BASE_URL + '/api/apis/purchase-credits', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUser.id, apiId: window.pendingPurchaseApiId })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast("API Purchased successfully!");
+                    if (data.newBalance !== undefined) {
+                        currentUser.credits = data.newBalance;
+                        const sidebarBalance = document.getElementById('sidebar-balance');
+                        if (sidebarBalance) sidebarBalance.textContent = `₹ ${data.newBalance.toLocaleString()}`;
+                    }
+                    togglePurchaseModal(false);
+                    // Reload dashboards
+                    loadUserDashboard();
+                    loadUserBilling();
+                } else {
+                    showToast(data.message, "error");
+                }
+            } catch(err) {
+                showToast("Error processing payment", "error");
+            } finally {
+                const executeBtn = document.getElementById('execute-purchase-btn');
+                executeBtn.disabled = false;
+                executeBtn.textContent = window.selectedPurchaseMethod === 'crypto' ? "Pay with MetaMask" : "Confirm Purchase";
+            }
+        };
+
         window.togglePurchaseModal = (show, apiData = null) => {
             const modal = document.getElementById('purchase-confirm-modal');
             if (show && apiData) {
@@ -346,6 +386,9 @@
         };
 
         window.saveAccountChanges = async () => {
+            const btn = document.getElementById('save-account-btn');
+            const originalText = btn.textContent;
+            
             const fullName = document.getElementById('set-fullname').value.trim();
             const email = document.getElementById('set-email').value;
             const organization = document.getElementById('set-org').value;
@@ -359,6 +402,9 @@
             }
 
             try {
+                btn.disabled = true;
+                btn.textContent = "Saving...";
+                
                 const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -366,13 +412,17 @@
                 });
                 const data = await res.json();
                 if (data.success) {
-                    showToast("Account changes saved!");
+                    showToast("Changes saved successfully");
                     document.getElementById('set-pass').value = ''; // Clear password field
+                    document.getElementById('set-pass-strength-container').style.display = 'none';
                 } else {
                     showToast("Failed: " + data.message, "error");
                 }
             } catch (err) {
                 showToast("Error saving account changes.", "error");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
             }
         };
 
@@ -452,8 +502,16 @@
                 });
         };
 
-        window.regenerateApiKey = async () => {
-            if (!confirm("Are you sure? Your old API key will stop working immediately.")) return;
+        window.closeConfirmModal = () => {
+            document.getElementById('confirm-modal').classList.remove('active');
+        };
+
+        window.regenerateApiKey = () => {
+            document.getElementById('confirm-modal').classList.add('active');
+        };
+
+        window.confirmRegenerateKey = async () => {
+            closeConfirmModal();
             try {
                 const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/apiKey/regenerate`, { method: 'POST' });
                 const data = await res.json();
@@ -572,6 +630,44 @@
                 strengthText.style.color = '#10b981';
             }
         });
+
+        // Settings Password Strength (Separate from Registration)
+        const setPass = document.getElementById('set-pass');
+        const setStrengthContainer = document.getElementById('set-pass-strength-container');
+        const setStrengthBar = document.getElementById('set-strength-bar');
+        const setStrengthText = document.getElementById('set-strength-text');
+
+        if (setPass) {
+            setPass.addEventListener('input', () => {
+                const pass = setPass.value;
+                if (pass.length === 0) {
+                    setStrengthContainer.style.display = 'none';
+                    return;
+                }
+                setStrengthContainer.style.display = 'block';
+
+                let strength = 0;
+                if (pass.length >= 8) strength += 25;
+                if (/[A-Z]/.test(pass)) strength += 25;
+                if (/[0-9]/.test(pass)) strength += 25;
+                if (/[^A-Za-z0-9]/.test(pass)) strength += 25;
+
+                setStrengthBar.style.width = strength + '%';
+                if (strength < 50) {
+                    setStrengthBar.style.backgroundColor = '#ef4444';
+                    setStrengthText.textContent = 'Weak - Keep going...';
+                    setStrengthText.style.color = '#ef4444';
+                } else if (strength < 100) {
+                    setStrengthBar.style.backgroundColor = '#f59e0b';
+                    setStrengthText.textContent = 'Medium - Good progress';
+                    setStrengthText.style.color = '#f59e0b';
+                } else {
+                    setStrengthBar.style.backgroundColor = '#10b981';
+                    setStrengthText.textContent = 'Strong - Perfect!';
+                    setStrengthText.style.color = '#10b981';
+                }
+            });
+        }
 
         // Handle Signup
         signupForm.addEventListener('submit', async (e) => {
@@ -759,6 +855,12 @@
                 // Update Active APIs Count
                 document.querySelector('#user-dashboard-section .overview .box:nth-child(2) h2').textContent = data.activeApis.length;
 
+                // Update Top Used API
+                const topUsedApiEl = document.getElementById('user-top-api');
+                if (topUsedApiEl) {
+                    topUsedApiEl.textContent = data.activeApis.length > 0 ? data.activeApis[0].name : 'No APIs Yet';
+                }
+
                 // Update API Key
                 const keyDisplay = document.getElementById('dashboard-apiKey');
                 if (keyDisplay) {
@@ -784,7 +886,7 @@
                                     </div>
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <button class="small" style="background: white; border: 1px solid #e2e8f0; color: #475569; padding: 6px 12px; margin: 0;" onclick="viewDocumentation(${api.apiId}, '${api.api_key}')">Docs</button>
+                                    <button class="small btn-outline-primary" style="padding: 6px 12px; margin: 0;" onclick="viewDocumentation(${api.apiId}, '${api.api_key}')">Docs</button>
                                     <button class="small danger" style="padding: 6px 10px; margin: 0;" onclick="removeApi(${api.apiId})">×</button>
                                 </div>
                             `;
@@ -2085,8 +2187,11 @@ Thank you for using API Hub.
                     style="font-size: 16px; font-weight: 700; color: #fff; display: block; margin-bottom: 10px;">₹
                     0.00</span>
                 <button class="add-money-btn"
-                    style="background: linear-gradient(135deg, #10b981, #059669); font-weight: 700; letter-spacing: 0.5px;"
+                    style="background: linear-gradient(135deg, #10b981, #059669); font-weight: 700; letter-spacing: 0.5px; margin-bottom: 8px;"
                     onclick="window.showTopupModal()">+ ADD MONEY</button>
+                <button class="add-money-btn"
+                    style="background: transparent; border: 1px solid rgba(255, 255, 255, 0.2); color: white; opacity: 0.8;"
+                    onclick="document.querySelector('[data-target=\'billing-section\']').click()">Transaction History</button>
             </div>
         </aside>
 
@@ -2132,6 +2237,11 @@ Thank you for using API Hub.
                             <h2>145ms</h2>
                             <span>Global performance</span>
                         </div>
+                        <div class="box" style="border-bottom: 4px solid #3b82f6;">
+                            <h4>Top Used API</h4>
+                            <h2 id="user-top-api" style="font-size: 1.25em; margin-bottom: 8px;">GeoMapper Pro</h2>
+                            <span>Highest volume</span>
+                        </div>
                     </div>
 
                     <!-- Panels -->
@@ -2150,9 +2260,9 @@ Thank you for using API Hub.
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <code id="dashboard-apiKey"
                                         style="background: #1e293b; color: #10b981; padding: 8px 12px; border-radius: 4px; flex: 1; font-family: monospace;">•••••••••••••••••••••</code>
-                                    <button class="small" id="dashboard-toggle-key-btn" style="margin:0;"
+                                    <button class="small btn-outline-primary" id="dashboard-toggle-key-btn" style="margin:0; padding: 6px 14px;"
                                         onclick="toggleApiKeyVisibility('dashboard')">Show</button>
-                                    <button class="small" style="margin:0;"
+                                    <button class="small btn-outline-primary" style="margin:0; padding: 6px 14px;"
                                         onclick="copyApiKey('dashboard')">Copy</button>
                                 </div>
                             </div>
@@ -2690,9 +2800,15 @@ Thank you for using API Hub.
                                     <button type="button" class="eye-toggle"
                                         onclick="togglePasswordVisibility('set-pass', this)">👁</button>
                                 </div>
+                                <div class="settings-strength-container" id="set-pass-strength-container" style="display:none;">
+                                    <div class="settings-password-strength">
+                                        <div class="settings-strength-bar" id="set-strength-bar"></div>
+                                    </div>
+                                    <div class="settings-strength-text" id="set-strength-text">Use 8+ chars, mixed case & symbols</div>
+                                </div>
                             </div>
                         </div>
-                        <button class="prominent-btn" onclick="saveAccountChanges()">Save Account Changes</button>
+                        <button id="save-account-btn" class="prominent-btn" onclick="saveAccountChanges()">Save Account Changes</button>
                     </div>
 
                     <!-- API Keys -->
@@ -2903,6 +3019,20 @@ Thank you for using API Hub.
                     style="font-size: 16px; font-weight: 700; color: #10b981; font-family: monospace;">ak_svc_xxxxxxxx</code>
             </div>
             <button style="width: 100%;" onclick="toggleSuccessModal(false)">Go to Dashboard</button>
+        </div>
+    </div>
+    <!-- =========================
+         CONFIRMATION MODAL
+         ========================= -->
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="modal-content confirmation" style="width: 400px; padding: 32px; border-radius: 20px;">
+            <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
+            <h3>Regenerate API Key?</h3>
+            <p>Are you sure you want to regenerate the API key? Your old key will stop working immediately.</p>
+            <div class="modal-footer">
+                <button class="small" style="background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; padding: 12px 24px;" onclick="closeConfirmModal()">Cancel</button>
+                <button class="small danger" style="padding: 12px 24px;" onclick="confirmRegenerateKey()">Confirm Regenerate</button>
+            </div>
         </div>
     </div>
 </body>
