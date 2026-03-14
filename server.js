@@ -30,14 +30,20 @@ console.log('GMAIL_APP_PASS:', process.env.GMAIL_APP_PASS ? 'Set' : 'NOT SET');
 console.log('-------------------------------');
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // Use TLS
     auth: {
         user: process.env.GMAIL_USER || 'sajalsinghal62650@gmail.com',
         pass: process.env.GMAIL_APP_PASS || 'mbexkymmjmukocsz'
     },
-    connectionTimeout: 10000, // 10 seconds
-    greetingTimeout: 10000,   // 10 seconds
-    socketTimeout: 15000      // 15 seconds
+    // Pool prevents Render connection drops/timeouts
+    pool: true, 
+    maxConnections: 1,
+    maxMessages: 10,
+    connectionTimeout: 20000, // 20 seconds
+    greetingTimeout: 20000,   // 20 seconds
+    socketTimeout: 25000      // 25 seconds
 });
 
 const otpStore = {}; // In-memory OTP storage
