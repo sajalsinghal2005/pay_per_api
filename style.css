@@ -1354,64 +1354,153 @@ button.danger:hover {
 .payment-options {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 15px;
+    gap: 12px;
     margin-top: 20px;
 }
 
 .payment-method {
-    border: 2px solid #f1f5f9;
+    border: 1px solid #e2e8f0;
     border-radius: 12px;
-    padding: 15px;
+    padding: 12px 16px;
     cursor: pointer;
-    transition: all 0.2s ease;
-    text-align: center;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: transparent;
 }
 
 .payment-method:hover {
-    border-color: #3b82f6;
+    border-color: #cbd5e1;
     background: #f8fafc;
+    transform: translateY(-1px);
 }
 
 .payment-method.selected {
     border-color: #3b82f6;
     background: #eff6ff;
+    box-shadow: 0 0 0 1px #3b82f6;
 }
 
-.payment-method i {
-    font-size: 24px;
-    margin-bottom: 8px;
-    display: block;
+.method-icon-container {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.payment-method span {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e293b;
 }
 
 .topup-amount-selector {
     display: flex;
     gap: 10px;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 }
 
 .amount-pill {
-    padding: 8px 16px;
+    flex: 1;
+    padding: 10px 0;
     border: 1px solid #e2e8f0;
-    border-radius: 20px;
+    border-radius: 10px;
     font-size: 14px;
+    font-weight: 500;
+    color: #475569;
     cursor: pointer;
     background: white;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
+    text-align: center;
 }
 
-.amount-pill:hover,
+.amount-pill:hover {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    color: #0f172a;
+}
+
 .amount-pill.active {
-    background: #3b82f6;
+    background: #0f172a;
     color: white;
+    border-color: #0f172a;
+    box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.1);
+}
+
+.custom-amount-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.currency-symbol {
+    position: absolute;
+    left: 16px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #64748b;
+    pointer-events: none;
+}
+
+#custom-topup-amount {
+    width: 100%;
+    padding: 14px 16px 14px 40px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #0f172a;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+#custom-topup-amount:focus {
+    outline: none;
     border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+#custom-topup-amount::placeholder {
+    color: #cbd5e1;
+    font-weight: 400;
+}
+
+/* Hide number input spinners */
+#custom-topup-amount::-webkit-inner-spin-button,
+#custom-topup-amount::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+#custom-topup-amount[type=number] {
+    appearance: textfield;
+    -moz-appearance: textfield;
 }
 
 .topup-btn-container {
-    margin-top: 30px;
+    margin-top: 32px;
 }
 
-.topup-btn-container button {
+#process-topup-btn {
     width: 100%;
+    padding: 16px;
+    font-size: 16px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.3s ease;
+}
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 .credits-pill {

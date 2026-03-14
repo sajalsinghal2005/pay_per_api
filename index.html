@@ -1001,9 +1001,33 @@
         window.setTopupAmount = (amt) => {
             document.getElementById('custom-topup-amount').value = amt;
             document.querySelectorAll('.amount-pill').forEach(btn => {
-                const btnAmt = parseInt(btn.textContent.replace('₹ ', '').replace(',', ''));
+                const btnAmt = parseInt(btn.textContent.replace('₹', '').replace(',', ''));
                 btn.classList.toggle('active', btnAmt === amt);
             });
+            validateTopupAmount();
+        };
+
+        window.handleCustomAmountInput = () => {
+            const inputVal = parseInt(document.getElementById('custom-topup-amount').value);
+            document.querySelectorAll('.amount-pill').forEach(btn => {
+                const btnAmt = parseInt(btn.textContent.replace('₹', '').replace(',', ''));
+                btn.classList.toggle('active', btnAmt === inputVal);
+            });
+            validateTopupAmount();
+        };
+
+        window.validateTopupAmount = () => {
+            const amount = parseInt(document.getElementById('custom-topup-amount').value);
+            const btn = document.getElementById('process-topup-btn');
+            if (!amount || amount <= 0) {
+                btn.disabled = true;
+                btn.style.opacity = '0.7';
+                btn.style.cursor = 'not-allowed';
+            } else {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            }
         };
 
         window.selectPaymentMethod = (el, method) => {
@@ -1017,8 +1041,11 @@
             if (!amount || amount <= 0) return alert("Please enter a valid amount");
 
             const btn = document.getElementById('process-topup-btn');
-            const originalText = btn.textContent;
-            btn.textContent = "Processing Payment...";
+            const btnText = btn.querySelector('.btn-text');
+            const btnLoader = btn.querySelector('.btn-loader');
+            
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'inline-block';
             btn.disabled = true;
 
             try {
@@ -1047,8 +1074,9 @@
             } catch (err) {
                 showToast("Error processing top-up", "error");
             } finally {
-                btn.textContent = originalText;
-                btn.disabled = false;
+                btnText.style.display = 'inline-block';
+                btnLoader.style.display = 'none';
+                validateTopupAmount(); // Re-evaluate disabled state
             }
         };
 
@@ -2883,49 +2911,59 @@ Thank you for using API Hub.
          TOP-UP MODAL
          ========================= -->
     <div id="topup-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Top-up Wallet</h3>
-                <button class="close-modal" onclick="window.hideTopupModal()">&times;</button>
+        <div class="modal-content" style="width: 440px; padding: 32px;">
+            <div class="modal-header" style="margin-bottom: 24px;">
+                <h3 style="font-size: 22px; color: #0f172a; margin: 0;">Top-up Wallet</h3>
+                <button class="close-modal" onclick="window.hideTopupModal()" style="font-size: 28px; line-height: 1;">&times;</button>
             </div>
 
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Choose an amount to add to your API Hub
-                wallet.</p>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 24px;">Select or enter an amount to add to your API Hub balance.</p>
 
             <div class="topup-amount-selector">
-                <button class="amount-pill" onclick="setTopupAmount(500)">₹ 500</button>
-                <button class="amount-pill active" onclick="setTopupAmount(1000)">₹ 1,000</button>
-                <button class="amount-pill" onclick="setTopupAmount(2000)">₹ 2,000</button>
-                <button class="amount-pill" onclick="setTopupAmount(5000)">₹ 5,000</button>
+                <button class="amount-pill" onclick="setTopupAmount(500)">₹500</button>
+                <button class="amount-pill active" onclick="setTopupAmount(1000)">₹1,000</button>
+                <button class="amount-pill" onclick="setTopupAmount(2000)">₹2,000</button>
+                <button class="amount-pill" onclick="setTopupAmount(5000)">₹5,000</button>
             </div>
 
-            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px;">Custom Amount</label>
-            <input type="number" id="custom-topup-amount" value="1000"
-                style="width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 20px;">
+            <div class="custom-amount-wrapper">
+                <span class="currency-symbol">₹</span>
+                <input type="number" id="custom-topup-amount" value="1000" placeholder="0.00" oninput="handleCustomAmountInput()">
+            </div>
 
-            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px;">Select Payment
-                Method</label>
+            <label style="display: block; font-size: 13px; font-weight: 600; margin: 24px 0 12px; color: #1e293b;">Payment Method</label>
             <div class="payment-options">
                 <div class="payment-method selected" onclick="selectPaymentMethod(this, 'card')">
-                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">💳</span>
-                    <span style="font-size: 12px; font-weight: 600;">Credit/Debit</span>
+                    <div class="method-icon-container" style="background: #e0e7ff; color: #4f46e5;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                    </div>
+                    <span>Card</span>
                 </div>
                 <div class="payment-method" onclick="selectPaymentMethod(this, 'upi')">
-                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">📱</span>
-                    <span style="font-size: 12px; font-weight: 600;">UPI / Google Pay</span>
+                    <div class="method-icon-container" style="background: #dcfce7; color: #16a34a;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                    </div>
+                    <span>UPI / GPay</span>
                 </div>
                 <div class="payment-method" onclick="selectPaymentMethod(this, 'paypal')">
-                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">🅿️</span>
-                    <span style="font-size: 12px; font-weight: 600;">PayPal</span>
+                    <div class="method-icon-container" style="background: #dbeafe; color: #2563eb;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16h6M7 8h8a4 4 0 0 1 0 8H7M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></svg>
+                    </div>
+                    <span>PayPal</span>
                 </div>
                 <div class="payment-method" onclick="selectPaymentMethod(this, 'bank')">
-                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">🏦</span>
-                    <span style="font-size: 12px; font-weight: 600;">Net Banking</span>
+                    <div class="method-icon-container" style="background: #f1f5f9; color: #64748b;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path></svg>
+                    </div>
+                    <span>Net Banking</span>
                 </div>
             </div>
 
             <div class="topup-btn-container">
-                <button id="process-topup-btn" onclick="window.processTopup()">Proceed to Pay</button>
+                <button id="process-topup-btn" onclick="window.processTopup()">
+                    <span class="btn-text">Proceed to Pay</span>
+                    <svg class="btn-loader" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none; animation: spin 1s linear infinite;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+                </button>
             </div>
         </div>
     </div>
