@@ -1,5 +1,5 @@
 const express = require('express');
-
+const nodemailer = require('nodemailer');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
@@ -24,6 +24,48 @@ process.on('uncaughtException', (err) => {
 });
 
 
+
+// --- Nodemailer Configuration (Optimized for Render/Cloud) ---
+const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465, // Use 465 for SSL (highly recommended for cloud servers)
+    secure: true,
+    auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASS
+    },
+    // Adding timeout and connection pool for better reliability on Render
+    connectionTimeout: 10000, 
+    greetingTimeout: 10000,
+    socketTimeout: 30000,
+    pool: true 
+});
+
+// Verify SMTP connection on startup (without crashing if it fails)
+transporter.verify((error, success) => {
+    if (error) {
+        console.warn("Nodemailer: Verification failed. Email notifications may not work.", error.message);
+    } else {
+        console.log("Nodemailer: Server is ready to take messages");
+    }
+});
+
+const sendEmail = async (to, subject, text, html) => {
+    try {
+        const info = await transporter.sendMail({
+            from: `"API Hub" <${process.env.GMAIL_USER}>`,
+            to,
+            subject,
+            text,
+            html
+        });
+        console.log("Email sent: %s", info.messageId);
+        return { success: true, messageId: info.messageId };
+    } catch (err) {
+        console.error("Email sending failed:", err);
+        return { success: false, error: err.message };
+    }
+};
 
 /* =========================
    DB HELPERS
@@ -109,6 +151,76 @@ async function verifyBlockchainTransaction(txHash) {
         return { success: false, message: "Verification service error" };
     }
 }
+
+// --- API Proxy Middleware ---
+async function validatePlatformKey(req, res, next) {
+    const apiKey = req.headers['x-api-key'];
+    const { apiSlug } = req.params;
+
+    if (!apiKey) {
+        return res.status(401).json({ success: false, message: "API Key is missing. Provide it in 'x-api-key' header." });
+    }
+
+    try {
+        // Find if this key belongs to a user and has access to the requested API slug
+        const access = await dbGet(`
+            SELECT ua.user_id, ua.api_id, a.api_slug, u.status as user_status
+            FROM user_apis ua
+            JOIN apis a ON ua.api_id = a.id
+            JOIN users u ON ua.user_id = u.id
+            WHERE ua.api_key = ? AND a.api_slug = ?
+        `, [apiKey, apiSlug]);
+
+        if (!access) {
+            return res.status(403).json({ success: false, message: "Invalid API Key or you haven't purchased access to this API." });
+        }
+
+        if (access.user_status === 'suspended') {
+            return res.status(403).json({ success: false, message: "Your account is suspended." });
+        }
+
+        // Attach user and API info to request
+        req.userAccess = access;
+        next();
+    } catch (err) {
+        res.status(500).json({ success: false, message: "Internal Server Error during validation." });
+    }
+}
+
+/* =========================
+   API PROXY ROUTE
+========================= */
+
+app.get('/api/proxy/:apiSlug', validatePlatformKey, async (req, res) => {
+    const { apiSlug } = req.params;
+    const { userAccess } = req;
+
+    try {
+        if (apiSlug === 'weather-cast') {
+            const city = req.query.city || 'London';
+            const units = req.query.units || 'metric';
+            const apiKey = process.env.OPENWEATHER_API_KEY;
+
+            if (!apiKey) {
+                return res.status(500).json({ success: false, message: "Weather provider key not configured on server." });
+            }
+
+            const response = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${city}&units=${units}&appid=${apiKey}`);
+            const data = await response.json();
+
+            // Log usage (simplified)
+            console.log(`User ${userAccess.user_id} called Weather API for city: ${city}`);
+
+            return res.status(response.status).json(data);
+        }
+
+        // Add more slugs here as needed
+        res.status(404).json({ success: false, message: "Proxy route for this API is not yet implemented." });
+
+    } catch (err) {
+        res.status(500).json({ success: false, message: "Error calling external provider: " + err.message });
+    }
+});
 
 /* =========================
    AUTH

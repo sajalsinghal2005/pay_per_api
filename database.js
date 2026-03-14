@@ -50,6 +50,7 @@ db.serialize(() => {
         CREATE TABLE IF NOT EXISTS apis(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
+            api_slug TEXT UNIQUE,
             provider TEXT,
             description TEXT,
             category TEXT,
@@ -145,12 +146,13 @@ db.serialize(() => {
 
             const stmt = db.prepare(`
                 INSERT INTO apis
-                (name,provider,description,category,price,image,badge,status)
-                VALUES(?,?,?,?,?,?,?,?)
+                (name,api_slug,provider,description,category,price,image,badge,status)
+                VALUES(?,?,?,?,?,?,?,?,?)
             `);
 
             stmt.run(
                 'MapBox API',
+                'mapbox',
                 'MapBox',
                 'High-performance vector maps and geocoding',
                 'Maps',
@@ -162,6 +164,7 @@ db.serialize(() => {
 
             stmt.run(
                 'WeatherCast API',
+                'weather-cast',
                 'AtmoSphere',
                 'Real-time Weather Data',
                 'Weather',
