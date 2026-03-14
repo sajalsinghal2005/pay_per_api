@@ -25,25 +25,34 @@ process.on('uncaughtException', (err) => {
 
 // --- Nodemailer & OTP Configuration ---
 console.log('--- SMTP Configuration Check ---');
-console.log('GMAIL_USER:', process.env.GMAIL_USER ? 'Set' : 'NOT SET');
-console.log('GMAIL_APP_PASS:', process.env.GMAIL_APP_PASS ? 'Set' : 'NOT SET');
+console.log('GMAIL_USER:', process.env.GMAIL_USER ? 'Set' : 'sajalsinghal62650@gmail.com');
+console.log('GMAIL_APP_PASS:', process.env.GMAIL_APP_PASS ? 'Set' : 'mcfkhtutfsdwkpeq');
 console.log('-------------------------------');
 
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // Use STARTTLS
+    port: 465, // Use 465 for secure connection (SSL/TLS) recommended for production
+    secure: true, 
     auth: {
-        user: process.env.GMAIL_USER || 'sajalsinghal62650@gmail.com',
-        pass: process.env.GMAIL_APP_PASS || 'mbexkymmjmukocsz'
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASS
     },
     // Pool prevents Render connection drops/timeouts
     pool: true,
-    maxConnections: 1,
-    maxMessages: 10,
-    connectionTimeout: 20000, // 20 seconds
-    greetingTimeout: 20000,   // 20 seconds
-    socketTimeout: 25000      // 25 seconds
+    maxConnections: 5, // Increased for production
+    maxMessages: 100, // Increased for production
+    connectionTimeout: 20000, 
+    greetingTimeout: 20000,   
+    socketTimeout: 30000      // Slightly increased
+});
+
+// Verify connection configuration on startup
+transporter.verify(function(error, success) {
+  if (error) {
+    console.error("[-] SMTP Connection Error:", error);
+  } else {
+    console.log("[+] SMTP Server is ready to take our messages");
+  }
 });
 
 const otpStore = {}; // In-memory OTP storage
@@ -143,19 +152,23 @@ async function verifyBlockchainTransaction(txHash) {
    AUTH SYSTEM (UNIFIED)
 ========================= */
 
-// 1. Send OTP
-app.post('/send-otp', async (req, res) => {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
-
-    const otp = generateOTP();
-    const expiresAt = Date.now() + 5 * 60 * 1000;
-    otpStore[email] = { otp, expiresAt };
+/**
+ * Sends an OTP email for user verification.
+ * @param {string} email - The recipient's email address.
+ * @param {string} otp - The one-time password to send.
+ * @returns {Promise<boolean>} - True if sent successfully, false otherwise.
+ */
+async function sendOTP(email, otp) {
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASS) {
+         console.error("[-] Missing email configuration (GMAIL_USER or GMAIL_APP_PASS). Email not sent.");
+         return false;
+    }
 
     const mailOptions = {
-        from: `"API Hub Support" <${process.env.GMAIL_USER || 'sajalsinghal62650@gmail.com'}>`,
+        from: `"API Hub Support" <${process.env.GMAIL_USER}>`,
         to: email,
-        subject: 'Verification Code',
+        subject: 'Your Verification Code',
+        text: `Your OTP is: ${otp}`, // Added a fallback text body
         html: `
             <div style="font-family: 'Inter', sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
                 <h2 style="color: #1f4ed8; margin-top: 0;">Identity Verification</h2>
@@ -169,13 +182,38 @@ app.post('/send-otp', async (req, res) => {
     };
 
     try {
-        console.log(`[OTP] Sending code ${otp} to ${email}...`);
-        await transporter.sendMail(mailOptions);
-        console.log(`[OTP] Success: ${email}`);
-        res.json({ success: true, message: 'OTP sent successfully' });
+        console.log(`[OTP] Sending verification code ${otp} to ${email}...`);
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`[OTP] Successfully sent email to: ${email}. Message ID: ${info.messageId}`);
+        return true;
     } catch (error) {
-        console.error('[OTP] Error detailed:', error);
-        res.status(500).json({ success: false, message: `Failed to send email: ${error.message}` });
+        console.error(`[-] Failed to send OTP to ${email}. Error details:`, error);
+        return false;
+    }
+}
+
+// 1. Send OTP Route
+app.post('/send-otp', async (req, res) => {
+    const { email } = req.body;
+    
+    if (!email) {
+        return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    // Generate and store OTP
+    const otp = generateOTP();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes validity
+    otpStore[email] = { otp, expiresAt };
+
+    // Send email using our robust helper function
+    const isSent = await sendOTP(email, otp);
+
+    if (isSent) {
+        res.json({ success: true, message: 'OTP sent successfully' });
+    } else {
+        // Delete the unused OTP record since it failed to send
+         delete otpStore[email];
+         res.status(500).json({ success: false, message: 'Failed to send verification email. Please try again later.' });
     }
 });
 
