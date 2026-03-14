@@ -6,6 +6,7 @@
     <title>API Hub</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
 </head>
 
 <!-- SCRIPTS -->
@@ -76,24 +77,37 @@
             const statusEl = document.getElementById('metamask-status');
             const addrEl = document.getElementById('metamask-address');
             const connectBtn = document.getElementById('connect-wallet-btn');
+            const executeBtn = document.getElementById('execute-purchase-btn');
 
             if (typeof window.ethereum !== 'undefined') {
                 statusEl.textContent = "MetaMask Detected";
                 statusEl.style.color = "#10b981";
                 
-                const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-                if (accounts.length > 0) {
-                    addrEl.textContent = accounts[0].substring(0, 6) + '...' + accounts[0].substring(38);
-                    connectBtn.style.display = 'none';
-                    window.userWalletAddress = accounts[0];
-                } else {
-                    addrEl.textContent = "Not Connected";
-                    connectBtn.style.display = 'block';
+                try {
+                    const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                    if (accounts.length > 0) {
+                        addrEl.textContent = accounts[0].substring(0, 6) + '...' + accounts[0].substring(38);
+                        connectBtn.style.display = 'none';
+                        window.userWalletAddress = accounts[0];
+                        executeBtn.disabled = false;
+                        executeBtn.textContent = "Pay with MetaMask";
+                    } else {
+                        addrEl.textContent = "Not Connected";
+                        connectBtn.style.display = 'block';
+                        executeBtn.disabled = true;
+                        executeBtn.textContent = "Connect Wallet First";
+                    }
+                } catch (err) {
+                    addrEl.textContent = "Connection Error";
+                    executeBtn.disabled = true;
                 }
             } else {
                 statusEl.textContent = "MetaMask Not Installed";
                 statusEl.style.color = "#ef4444";
                 connectBtn.textContent = "Install MetaMask";
+                connectBtn.style.display = 'block';
+                executeBtn.disabled = true;
+                executeBtn.textContent = "MetaMask Required";
                 connectBtn.onclick = () => window.open('https://metamask.io/download/', '_blank');
             }
         };
@@ -111,8 +125,9 @@
         };
 
         window.payWithMetaMask = async () => {
-            if (typeof ethers === 'undefined') {
-                return showToast("Blockchain library still loading, please wait...", "error");
+            const eth = window.ethers || ethers;
+            if (typeof eth === 'undefined') {
+                return showToast("Blockchain library still loading, please refresh the page.", "error");
             }
             if (!window.userWalletAddress) {
                 return showToast("Please connect MetaMask first", "error");
@@ -123,11 +138,12 @@
             executeBtn.textContent = "Confirming in MetaMask...";
 
             try {
-                const provider = new ethers.providers.Web3Provider(window.ethereum);
+                // Ethers v5 syntax
+                const provider = new eth.providers.Web3Provider(window.ethereum);
                 const signer = provider.getSigner();
                 
                 // Minimum amount 0.001 ETH
-                const amount = ethers.utils.parseEther("0.001");
+                const amount = eth.utils.parseEther("0.001");
                 const receiverAddress = "0x7894561230987456123098745612309874561230"; // Mock owner address
 
                 const tx = await signer.sendTransaction({
@@ -166,8 +182,10 @@
             } catch (err) {
                 showToast("Payment Failed: " + err.message, "error");
             } finally {
-                executeBtn.disabled = false;
-                executeBtn.textContent = window.selectedPurchaseMethod === 'crypto' ? "Pay with MetaMask" : "Confirm Purchase";
+                if (document.getElementById('purchase-confirm-modal').classList.contains('active')) {
+                    executeBtn.disabled = false;
+                    executeBtn.textContent = window.selectedPurchaseMethod === 'crypto' ? "Pay with MetaMask" : "Confirm Purchase";
+                }
             }
         };
 
@@ -2002,14 +2020,14 @@ Thank you for using API Hub.
             <form id="login-form" autocomplete="off">
                 <div id="login-fields">
                     <label>Email Address</label>
-                    <input type="email" id="login-email" placeholder="name@company.com" required>
+                    <input type="email" id="login-email" placeholder="name@company.com" autocomplete="new-password" required>
 
                     <label style="display: flex; justify-content: space-between; align-items: center;">
                         Password
                         <a href="#" id="go-to-forgot-pass"
                             style="font-size: 12px; color: #60a5fa; font-weight: 500; text-decoration: none;">Forgot?</a>
                     </label>
-                    <input type="password" id="login-pass" placeholder="••••••••" required>
+                    <input type="password" id="login-pass" placeholder="Enter your password" autocomplete="new-password" required>
                 </div>
 
                 <!-- Login OTP Section -->
@@ -2074,10 +2092,10 @@ Thank you for using API Hub.
                     style="text-align: center; font-size: 20px; font-weight: 700;">
 
                 <label>New Password</label>
-                <input type="password" id="reset-new-pass" placeholder="••••••••" required>
+                <input type="password" id="reset-new-pass" placeholder="Enter new password" required>
 
                 <label>Confirm Password</label>
-                <input type="password" id="reset-confirm-pass" placeholder="••••••••" required>
+                <input type="password" id="reset-confirm-pass" placeholder="Confirm new password" required>
 
                 <button type="submit" id="reset-pass-btn">Update Password</button>
             </form>
@@ -2117,14 +2135,14 @@ Thank you for using API Hub.
                     <input type="email" id="reg-email" placeholder="john@example.com" required>
 
                     <label>Password</label>
-                    <input type="password" id="reg-pass" placeholder="••••••••" required>
+                    <input type="password" id="reg-pass" placeholder="Enter your password" required>
                     <div class="password-strength">
                         <div id="strength-bar" class="strength-bar"></div>
                     </div>
                     <div id="strength-text" class="strength-text">Use 8+ chars, mixed case & symbols</div>
 
                     <label>Confirm Password</label>
-                    <input type="password" id="reg-confirm-pass" placeholder="••••••••" required>
+                    <input type="password" id="reg-confirm-pass" placeholder="Confirm your password" required>
                 </div>
 
                 <!-- Signup OTP Section -->
