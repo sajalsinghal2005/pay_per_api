@@ -1,5 +1,5 @@
 const express = require('express');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
@@ -23,37 +23,8 @@ process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception thrown:', err);
 });
 
-// --- Nodemailer & OTP Configuration ---
-console.log('--- SMTP Configuration Check ---');
-console.log('GMAIL_USER:', process.env.GMAIL_USER ? 'Set' : 'sajalsinghal62650@gmail.com');
-console.log('GMAIL_APP_PASS:', process.env.GMAIL_APP_PASS ? 'Set' : 'mcfkhtutfsdwkpeq');
-console.log('-------------------------------');
-
-const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465, // Use 465 for secure connection (SSL/TLS) recommended for production
-    secure: true, 
-    auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASS
-    },
-    // Pool prevents Render connection drops/timeouts
-    pool: true,
-    maxConnections: 5, // Increased for production
-    maxMessages: 100, // Increased for production
-    connectionTimeout: 20000, 
-    greetingTimeout: 20000,   
-    socketTimeout: 30000      // Slightly increased
-});
-
-// Verify connection configuration on startup
-transporter.verify(function(error, success) {
-  if (error) {
-    console.error("[-] SMTP Connection Error:", error);
-  } else {
-    console.log("[+] SMTP Server is ready to take our messages");
-  }
-});
+// --- Resend & OTP Configuration ---
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const otpStore = {}; // In-memory OTP storage
 
@@ -153,41 +124,36 @@ async function verifyBlockchainTransaction(txHash) {
 ========================= */
 
 /**
- * Sends an OTP email for user verification.
+ * Sends an OTP email for user verification using Resend.
  * @param {string} email - The recipient's email address.
  * @param {string} otp - The one-time password to send.
  * @returns {Promise<boolean>} - True if sent successfully, false otherwise.
  */
 async function sendOTP(email, otp) {
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASS) {
-         console.error("[-] Missing email configuration (GMAIL_USER or GMAIL_APP_PASS). Email not sent.");
+    if (!process.env.RESEND_API_KEY) {
+         console.error("[-] Missing RESEND_API_KEY configuration. Email not sent.");
          return false;
     }
 
-    const mailOptions = {
-        from: `"API Hub Support" <${process.env.GMAIL_USER}>`,
-        to: email,
-        subject: 'Your Verification Code',
-        text: `Your OTP is: ${otp}`, // Added a fallback text body
-        html: `
-            <div style="font-family: 'Inter', sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                <h2 style="color: #1f4ed8; margin-top: 0;">Identity Verification</h2>
-                <p>Use the following code to complete your action. This code is valid for 5 minutes.</p>
-                <div style="font-size: 32px; font-weight: 700; color: #1f4ed8; letter-spacing: 4px; padding: 15px; background: #eff6ff; border-radius: 6px; text-align: center; margin: 20px 0;">
-                    ${otp}
-                </div>
-                <p style="color: #64748b; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
-            </div>
-        `
-    };
-
     try {
-        console.log(`[OTP] Sending verification code ${otp} to ${email}...`);
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`[OTP] Successfully sent email to: ${email}. Message ID: ${info.messageId}`);
+        console.log(`[OTP] Sending verification code ${otp} to ${email} via Resend...`);
+        
+        const { data, error } = await resend.emails.send({
+            from: 'onboarding@resend.dev',
+            to: email,
+            subject: 'OTP Verification',
+            html: `Your OTP is: ${otp}`
+        });
+
+        if (error) {
+            console.error(`[-] Failed to send OTP to ${email}. Resend error details:`, error);
+            return false;
+        }
+
+        console.log(`[OTP] Successfully sent email to: ${email}. Message ID: ${data.id}`);
         return true;
     } catch (error) {
-        console.error(`[-] Failed to send OTP to ${email}. Error details:`, error);
+        console.error(`[-] Unexpected error sending OTP to ${email}:`, error);
         return false;
     }
 }
