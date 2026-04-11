@@ -1,8 +1,10 @@
+require('dotenv').config(); // Load environment variables FIRST
 const express = require('express');
 const nodemailer = require('nodemailer');
 const cors = require('cors');
 const path = require('path');
 const db = require('./database');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 app.use(cors());
@@ -46,10 +48,6 @@ transporter.verify((err, success) => {
         console.log('[Email] SMTP connection verified');
     }
 });
-
-const otpStore = {}; // In-memory OTP storage
-
-const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 /* =========================
    DB HELPERS
@@ -141,162 +139,13 @@ async function verifyBlockchainTransaction(txHash) {
 ========================= */
 
 /* =========================
-   AUTH SYSTEM (UNIFIED)
+   AUTH SYSTEM (SIMPLIFIED - NO OTP)
 ========================= */
 
-// 1. Send OTP
-app.post('/send-otp', async (req, res) => {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+// Use the modular auth routes from routes/auth.js
+app.use('/', authRoutes);
 
-    const otp = generateOTP();
-    const expiresAt = Date.now() + 5 * 60 * 1000;
-    otpStore[email] = { otp, expiresAt };
-
-    const mailOptions = {
-        from: '"API Hub Support" <sajalsinghal62650@gmail.com>',
-        to: email,
-        subject: 'Verification Code',
-        html: `
-            <div style="font-family: 'Inter', sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                <h2 style="color: #1f4ed8; margin-top: 0;">Identity Verification</h2>
-                <p>Use the following code to complete your action. This code is valid for 5 minutes.</p>
-                <div style="font-size: 32px; font-weight: 700; color: #1f4ed8; letter-spacing: 4px; padding: 15px; background: #eff6ff; border-radius: 6px; text-align: center; margin: 20px 0;">
-                    ${otp}
-                </div>
-                <p style="color: #64748b; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
-            </div>
-        `
-    };
-
-    try {
-        console.log(`[OTP] Sending code ${otp} to ${email}...`);
-        await transporter.sendMail(mailOptions);
-        res.json({ success: true, message: 'OTP sent successfully' });
-    } catch (error) {
-        console.error('Email error:', error);
-        // Include error message in response for easier debugging (remove or sanitize in production)
-        res.status(500).json({ success: false, message: 'Failed to send email. Check your connection.', details: error?.message });
-    }
-});
-
-// 2. Verify OTP (General)
-app.post('/verify-otp', (req, res) => {
-    const { email, otp } = req.body;
-    
-    // Hackathon Shortcut for Admin
-    if (email === 'admin@admin.com' && otp === '123456') {
-        return res.json({ success: true, message: 'Admin Master Key Verified' });
-    }
-
-    const record = otpStore[email];
-
-    if (!record) return res.status(400).json({ success: false, message: 'OTP expired or not requested' });
-    if (Date.now() > record.expiresAt) {
-        delete otpStore[email];
-        return res.status(400).json({ success: false, message: 'OTP expired' });
-    }
-
-    if (record.otp === otp) {
-        // Keep the record for the final action (register/login/reset)
-        res.json({ success: true, message: 'OTP verified' });
-    } else {
-        res.status(400).json({ success: false, message: 'Invalid OTP code' });
-    }
-});
-
-// 3. Login
-app.post('/login', async (req, res) => {
-    const { email, password } = req.body;
-    try {
-        const user = await dbGet("SELECT * FROM users WHERE email=? AND password=?", [email, password]);
-        if (!user) return res.status(401).json({ success: false, message: 'Invalid email or password' });
-        if (user.status === 'suspended') return res.status(403).json({ success: false, message: 'Account suspended' });
-
-        // Trigger OTP for login security
-        res.json({ success: true, requireOtp: true, message: 'Credentials valid. Please verify OTP.' });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// 4. Registration
-app.post('/register', async (req, res) => {
-    const { firstName, lastName, email, contact, password, otp } = req.body;
-    const record = otpStore[email];
-
-    if (!record || record.otp !== otp) return res.status(400).json({ success: false, message: 'OTP verification failed' });
-    delete otpStore[email];
-
-    const apiKey = 'ak_live_' + Math.random().toString(36).substring(2);
-
-    try {
-        await dbRun(
-            `INSERT INTO users (firstName, lastName, email, contact, password, role, status, apiKey) 
-             VALUES (?,?,?,?,?,?,?,?)`,
-            [firstName, lastName, email, contact, password, 'user', 'active', apiKey]
-        );
-        res.json({ success: true, message: 'Registration successful' });
-    } catch (err) {
-        if (err.message.includes('UNIQUE')) return res.status(400).json({ success: false, message: 'Email already exists' });
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// 5. Forgot Password
-app.post('/forgot-password', async (req, res) => {
-    const { email } = req.body;
-    try {
-        const user = await dbGet("SELECT id FROM users WHERE email=?", [email]);
-        if (!user) return res.status(404).json({ success: false, message: 'No account with this email' });
-
-        // Trigger OTP
-        res.json({ success: true, userId: user.id, message: 'User found. Please verify OTP to reset.' });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// 6. Reset Password
-app.post('/reset-password', async (req, res) => {
-    const { userId, email, otp, newPassword } = req.body;
-    const record = otpStore[email];
-
-    if (!record || record.otp !== otp) return res.status(400).json({ success: false, message: 'Invalid OTP' });
-    delete otpStore[email];
-
-    try {
-        await dbRun("UPDATE users SET password=? WHERE id=?", [newPassword, userId]);
-        res.json({ success: true, message: 'Password updated' });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// Compatibility shim for existing frontend if needed (mapping old api/auth to new routes)
-app.post('/api/auth/login', (req, res) => res.redirect(307, '/login'));
-app.post('/api/auth/register', (req, res) => res.redirect(307, '/register'));
-app.post('/api/auth/send-otp', (req, res) => res.redirect(307, '/send-otp'));
-app.post('/api/auth/verify-otp', (req, res) => res.redirect(307, '/verify-otp'));
-app.post('/api/auth/login-confirm', (req, res) => {
-    const { email, otp } = req.body;
-
-    // Master OTP for Demo
-    if (email === 'admin@admin.com' && otp === '123456') {
-        return dbGet("SELECT * FROM users WHERE email=?", [email]).then(user => {
-            res.json({ success: true, user });
-        });
-    }
-
-    const record = otpStore[email];
-    if (!record || record.otp !== otp) return res.status(400).json({ success: false, message: 'Invalid OTP' });
-    delete otpStore[email];
-    dbGet("SELECT * FROM users WHERE email=?", [email]).then(user => {
-        res.json({ success: true, user });
-    });
-});
-
-
+/* =========================
 
 /* =========================
    MARKETPLACE

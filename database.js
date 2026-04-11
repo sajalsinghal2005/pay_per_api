@@ -38,7 +38,7 @@ db.serialize(() => {
     `);
 
     // Add missing columns if user table already existed
-    const userColumns = ['organization TEXT', 'autoRecharge BOOLEAN DEFAULT FALSE', 'lowCreditNotifications BOOLEAN DEFAULT TRUE', 'sessionTimeout INTEGER DEFAULT 30', 'twoFactorAuth BOOLEAN DEFAULT FALSE'];
+    const userColumns = ['organization TEXT', 'autoRecharge BOOLEAN DEFAULT FALSE', 'lowCreditNotifications BOOLEAN DEFAULT TRUE', 'sessionTimeout INTEGER DEFAULT 30', 'twoFactorAuth BOOLEAN DEFAULT FALSE', 'walletAddress TEXT UNIQUE'];
     userColumns.forEach(col => {
         db.run(`ALTER TABLE users ADD COLUMN ${col}`, () => { });
     });

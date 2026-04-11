@@ -10,6 +10,7 @@
 
 <!-- SCRIPTS -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const API_BASE_URL = ''; // Always use relative paths for reliability
@@ -564,125 +565,38 @@
             const pass = document.getElementById('reg-pass').value;
             const confirmPass = document.getElementById('reg-confirm-pass').value;
 
-            if (!window.isOtpSent) {
-                if (pass !== confirmPass) return showToast("Passwords do not match!", "error");
-                if (pass.length < 8 || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) {
-                    return showToast("Password must be at least 8 chars, 1 uppercase, 1 number.", "error");
-                }
+            // Validate passwords match
+            if (pass !== confirmPass) return showToast("Passwords do not match!", "error");
+            if (pass.length < 8 || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) {
+                return showToast("Password must be at least 8 chars, 1 uppercase, 1 number.", "error");
+            }
 
-                const signupBtn = document.getElementById('signup-btn');
-                signupBtn.disabled = true;
-                signupBtn.textContent = "Sending OTP...";
+            const signupBtn = document.getElementById('signup-btn');
+            signupBtn.disabled = true;
+            signupBtn.textContent = "Creating Account...";
 
-                try {
-                    const res = await fetch(API_BASE_URL + '/send-otp', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email })
-                    });
-                    const data = await res.json();
-                    if (res.ok && data.success) {
-                        showToast("Verification code sent to email!");
-                        document.getElementById('signup-fields').style.display = 'none';
-                        document.getElementById('otp-section').style.display = 'block';
-                        signupBtn.disabled = false;
-                        signupBtn.textContent = "Verify & Create Account";
-                        window.isOtpSent = true;
-                        startResendTimer('signup');
-                    } else {
-                        const errMsg = data.message || "Failed to send OTP";
-                        const errDetail = data.details ? ` (${data.details})` : "";
-                        showToast(errMsg + errDetail, "error");
-                        signupBtn.disabled = false;
-                        signupBtn.textContent = "Send OTP";
-                    }
-                } catch (err) {
-                    showToast("Failed to connect to server", "error");
+            try {
+                const res = await fetch(API_BASE_URL + '/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ firstName: fname, lastName: lname, email, contact, password: pass })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast("Account created! Please login.", "success");
+                    signupForm.reset();
+                    signupView.style.display = 'none';
+                    loginView.style.display = 'flex';
+                } else {
+                    showToast(data.message || "Signup failed", "error");
                     signupBtn.disabled = false;
-                    signupBtn.textContent = "Send OTP";
+                    signupBtn.textContent = "Create Account";
                 }
-            } else {
-                const otp = document.getElementById('reg-otp').value;
-                if (otp.length !== 6) return showToast("Enter 6-digit OTP", "error");
-
-                try {
-                    const res = await fetch(API_BASE_URL + '/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ firstName: fname, lastName: lname, email, contact, password: pass, otp })
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        showToast("Welcome! Registration successful.");
-                        signupForm.reset();
-                        window.isOtpSent = false;
-                        document.getElementById('signup-fields').style.display = 'block';
-                        document.getElementById('otp-section').style.display = 'none';
-                        signupView.style.display = 'none';
-                        loginView.style.display = 'flex';
-                    } else {
-                        showToast(data.message, "error");
-                    }
-                } catch (err) {
-                    showToast("Registration failed", "error");
-                }
-            }
-        });
-
-        // Resend Timer Logic
-        let timers = { signup: { val: 30, id: null }, login: { val: 30, id: null } };
-        function startResendTimer(type) {
-            const btn = type === 'signup' ? document.getElementById('resend-otp-btn') : document.getElementById('login-resend-otp-btn');
-            const timerSpan = type === 'signup' ? document.getElementById('otp-timer') : document.getElementById('login-otp-timer');
-            const wrapper = type === 'signup' ? document.getElementById('signup-timer-wrapper') : document.getElementById('login-timer-wrapper');
-
-            timers[type].val = 30;
-            btn.style.display = 'none';
-            wrapper.style.display = 'inline';
-
-            clearInterval(timers[type].id);
-            timers[type].id = setInterval(() => {
-                timers[type].val--;
-                timerSpan.textContent = timers[type].val;
-                if (timers[type].val <= 0) {
-                    clearInterval(timers[type].id);
-                    btn.style.display = 'inline';
-                    wrapper.style.display = 'none';
-                }
-            }, 1000);
-        }
-
-        document.getElementById('resend-otp-btn').addEventListener('click', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('reg-email').value;
-            const res = await fetch(API_BASE_URL + '/send-otp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
-            });
-            const data = await res.json();
-            if (res.ok && data.success) {
-                showToast("Code resent!");
-                startResendTimer('signup');
-            } else {
-                showToast(data.message || "Resend failed", "error");
-            }
-        });
-
-        document.getElementById('login-resend-otp-btn').addEventListener('click', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('login-email').value;
-            const res = await fetch(API_BASE_URL + '/send-otp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
-            });
-            const data = await res.json();
-            if (res.ok && data.success) {
-                showToast("Code resent!");
-                startResendTimer('login');
-            } else {
-                showToast(data.message || "Resend failed", "error");
+            } catch (err) {
+                console.error("Signup error:", err);
+                showToast("Failed to create account. Try again.", "error");
+                signupBtn.disabled = false;
+                signupBtn.textContent = "Create Account";
             }
         });
 
@@ -691,78 +605,34 @@
             e.preventDefault();
             const email = document.getElementById('login-email').value;
             const password = document.getElementById('login-pass').value;
+            const loginBtn = document.getElementById('login-btn');
 
-            if (!window.isLoginOtpSent) {
-                const loginBtn = document.getElementById('login-btn');
-                loginBtn.disabled = true;
-                loginBtn.textContent = "Checking...";
+            loginBtn.disabled = true;
+            loginBtn.textContent = "Signing in...";
 
-                try {
-                    const res = await fetch(API_BASE_URL + '/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email, password })
-                    });
+            try {
+                const res = await fetch(API_BASE_URL + '/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
 
-                    const data = await res.json();
+                const data = await res.json();
 
-                    if (!res.ok) {
-                        showToast(data.message || "Login failed", "error");
-                        loginBtn.disabled = false;
-                        loginBtn.textContent = "Sign In";
-                        return;
-                    }
-
-                    if (data.success && data.requireOtp) {
-                        // Stage 1 pass, send OTP
-                        await fetch(API_BASE_URL + '/send-otp', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email })
-                        });
-                        showToast("Credentials verified. Check email for OTP.");
-                        document.getElementById('login-fields').style.display = 'none';
-                        document.getElementById('login-otp-section').style.display = 'block';
-                        loginBtn.disabled = false;
-                        loginBtn.textContent = "Confirm Login";
-                        window.isLoginOtpSent = true;
-                        startResendTimer('login');
-                    } else {
-                        showToast(data.message, "error");
-                        loginBtn.disabled = false;
-                        loginBtn.textContent = "Sign In";
-                    }
-                } catch (err) {
-                    console.error("Login fetch error:", err);
-                    showToast("Network error or server down", "error");
+                if (data.success && data.user) {
+                    currentUser = data.user;
+                    showToast("Login successful!", "success");
+                    loginSuccess();
+                } else {
+                    showToast(data.message || "Login failed", "error");
                     loginBtn.disabled = false;
                     loginBtn.textContent = "Sign In";
                 }
-            } else {
-                const otp = document.getElementById('login-otp').value;
-                try {
-                    const res = await fetch(API_BASE_URL + '/verify-otp', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email, otp })
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        // Now fetch actual user data for dashboard
-                        const loginRes = await fetch(API_BASE_URL + '/api/auth/login-confirm', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email, otp })
-                        });
-                        const loginData = await loginRes.json();
-                        currentUser = loginData.user;
-                        loginSuccess();
-                    } else {
-                        showToast(data.message, "error");
-                    }
-                } catch (err) {
-                    showToast("Verification failed", "error");
-                }
+            } catch (err) {
+                console.error("Login error:", err);
+                showToast("Network error. Please try again.", "error");
+                loginBtn.disabled = false;
+                loginBtn.textContent = "Sign In";
             }
         });
 
@@ -772,7 +642,7 @@
             const email = document.getElementById('forgot-pass-email').value;
             const forgotBtn = document.getElementById('forgot-pass-btn');
             forgotBtn.disabled = true;
-            forgotBtn.textContent = "Sending...";
+            forgotBtn.textContent = "Checking...";
 
             try {
                 const res = await fetch(API_BASE_URL + '/forgot-password', {
@@ -782,23 +652,18 @@
                 });
                 const data = await res.json();
                 if (data.success) {
-                    // Send OTP
-                    await fetch(API_BASE_URL + '/send-otp', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email })
-                    });
-                    showToast("User found. OTP sent to email.");
+                    showToast("Proceed to reset your password.", "success");
                     window.forgotEmail = email;
-                    window.forgotUserId = data.userId;
                     forgotPassView.style.display = 'none';
                     resetPassView.style.display = 'flex';
                 } else {
                     showToast(data.message, "error");
+                    forgotBtn.disabled = false;
+                    forgotBtn.textContent = "Continue";
                 }
             } catch (err) {
+                console.error("Forgot password error:", err);
                 showToast("Server error", "error");
-            } finally {
                 forgotBtn.disabled = false;
                 forgotBtn.textContent = "Continue";
             }
@@ -807,35 +672,41 @@
         // Handle Reset Password
         resetPassForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const otp = document.getElementById('reset-otp').value;
             const newPassword = document.getElementById('reset-new-pass').value;
             const confirmPassword = document.getElementById('reset-confirm-pass').value;
 
             if (newPassword !== confirmPassword) return showToast("Passwords do not match", "error");
-            if (newPassword.length < 8) return showToast("Password too short", "error");
+            if (newPassword.length < 8) return showToast("Password must be at least 8 characters", "error");
+
+            const resetBtn = document.getElementById('reset-pass-btn');
+            resetBtn.disabled = true;
+            resetBtn.textContent = "Updating...";
 
             try {
                 const res = await fetch(API_BASE_URL + '/reset-password', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        userId: window.forgotUserId,
                         email: window.forgotEmail,
-                        otp,
                         newPassword
                     })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    showToast("Password updated! Please login.");
+                    showToast("Password updated! Please login.", "success");
                     resetPassForm.reset();
                     resetPassView.style.display = 'none';
                     loginView.style.display = 'flex';
                 } else {
-                    showToast(data.message, "error");
+                    showToast(data.message || "Password reset failed", "error");
+                    resetBtn.disabled = false;
+                    resetBtn.textContent = "Update Password";
                 }
             } catch (err) {
-                showToast("An error occurred during login.", "error");
+                console.error("Reset password error:", err);
+                showToast("An error occurred", "error");
+                resetBtn.disabled = false;
+                resetBtn.textContent = "Update Password";
             }
         });
 
@@ -2002,32 +1873,15 @@ Thank you for using API Hub.
             <p>Login to your account to continue</p>
 
             <form id="login-form" autocomplete="off">
-                <div id="login-fields">
-                    <label>Email Address</label>
-                    <input type="email" id="login-email" placeholder="name@company.com" required>
+                <label>Email Address</label>
+                <input type="email" id="login-email" placeholder="name@company.com" required>
 
-                    <label style="display: flex; justify-content: space-between; align-items: center;">
-                        Password
-                        <a href="#" id="go-to-forgot-pass"
-                            style="font-size: 12px; color: #60a5fa; font-weight: 500; text-decoration: none;">Forgot?</a>
-                    </label>
-                    <input type="password" id="login-pass" placeholder="••••••••" required>
-                </div>
-
-                <!-- Login OTP Section -->
-                <div id="login-otp-section" style="display: none;">
-                    <label>Confirm Identity</label>
-                    <p style="font-size: 13px; color: #94a3b8; margin-top: 4px; margin-bottom: 20px;">We've sent a
-                        6-digit code to your email.</p>
-                    <input type="text" id="login-otp" placeholder="000000" maxlength="6"
-                        style="text-align: center; font-size: 28px; letter-spacing: 8px; font-weight: 700; background: rgba(15, 23, 42, 0.8);">
-
-                    <div style="font-size: 14px; margin-top: 20px; text-align: center; color: #64748b;">
-                        <span id="login-timer-wrapper">Resend code in <strong id="login-otp-timer">30</strong>s</span>
-                        <a href="#" id="login-resend-otp-btn"
-                            style="display: none; color: #60a5fa; font-weight: 600;">Resend OTP</a>
-                    </div>
-                </div>
+                <label style="display: flex; justify-content: space-between; align-items: center;">
+                    Password
+                    <a href="#" id="go-to-forgot-pass"
+                        style="font-size: 12px; color: #60a5fa; font-weight: 500; text-decoration: none;">Forgot?</a>
+                </label>
+                <input type="password" id="login-pass" placeholder="••••••••" required>
 
                 <button type="submit" id="login-btn">Sign In</button>
             </form>
@@ -2045,8 +1899,8 @@ Thank you for using API Hub.
     <div id="forgot-pass-view" class="login-container" style="display: none;">
         <div class="login-card">
             <div class="icon">🔑</div>
-            <h2>Reset Access</h2>
-            <p>Enter your email to receive a verification code.</p>
+            <h2>Reset Password</h2>
+            <p>Enter your email to reset your password.</p>
 
             <form id="forgot-pass-form">
                 <label>Email Address</label>
@@ -2068,13 +1922,9 @@ Thank you for using API Hub.
         <div class="login-card">
             <div class="icon">🔓</div>
             <h2>Set New Password</h2>
-            <p>Verification complete. Choose a strong password.</p>
+            <p>Enter your new password.</p>
 
             <form id="reset-pass-form">
-                <label>Verification Code</label>
-                <input type="text" id="reset-otp" placeholder="6-digit code" required maxlength="6"
-                    style="text-align: center; font-size: 20px; font-weight: 700;">
-
                 <label>New Password</label>
                 <input type="password" id="reset-new-pass" placeholder="••••••••" required>
 
@@ -2129,23 +1979,7 @@ Thank you for using API Hub.
                     <input type="password" id="reg-confirm-pass" placeholder="••••••••" required>
                 </div>
 
-                <!-- Signup OTP Section -->
-                <div id="otp-section"
-                    style="display: none; border-top: 1px solid rgba(255,255,255,0.05); margin-top: 24px; padding-top: 24px;">
-                    <label>Verify Email</label>
-                    <p style="font-size: 13px; color: #94a3b8; margin-top: 4px; margin-bottom: 20px;">We've sent a code
-                        to your email.</p>
-                    <input type="text" id="reg-otp" placeholder="000000" maxlength="6"
-                        style="text-align: center; font-size: 28px; letter-spacing: 8px; font-weight: 700; background: rgba(15, 23, 42, 0.8);">
-
-                    <div style="font-size: 14px; margin-top: 20px; text-align: center; color: #64748b;">
-                        <span id="signup-timer-wrapper">Resend in <strong id="otp-timer">30</strong>s</span>
-                        <a href="#" id="resend-otp-btn" style="display: none; color: #60a5fa; font-weight: 600;">Resend
-                            OTP</a>
-                    </div>
-                </div>
-
-                <button type="submit" id="signup-btn">Send OTP</button>
+                <button type="submit" id="signup-btn">Create Account</button>
             </form>
 
             <div class="links">
@@ -2559,6 +2393,145 @@ Thank you for using API Hub.
                     </div>
                 </section>
 
+                <!-- 2.5 API DETAILS PAGE -->
+                <section id="api-details-section" class="page-section" style="display: none;">
+                    <div class="api-details-container">
+                        <!-- Back Button -->
+                        <div style="margin-bottom: 24px;">
+                            <button onclick="goBackToMarketplace()" 
+                                style="background: transparent; border: none; color: #60a5fa; font-size: 14px; font-weight: 600; cursor: pointer; padding: 8px 12px; display: flex; align-items: center; gap: 6px;">
+                                ← Back to Marketplace
+                            </button>
+                        </div>
+
+                        <!-- API Header -->
+                        <div class="api-details-header">
+                            <div style="display: flex; align-items: flex-start; gap: 24px; margin-bottom: 28px;">
+                                <img id="details-api-image" src="" alt="" style="width: 120px; height: 120px; border-radius: 12px; object-fit: cover;">
+                                <div style="flex: 1;">
+                                    <h1 id="details-api-name" style="font-size: 32px; font-weight: 700; margin: 0 0 8px 0; color: #fff;">API Name</h1>
+                                    <p id="details-api-provider" style="font-size: 14px; color: #94a3b8; margin: 0 0 16px 0;">Provider Name</p>
+                                    <p id="details-api-description" style="font-size: 15px; color: #cbd5e1; margin: 0; line-height: 1.6; max-width: 600px;">API Description text</p>
+                                </div>
+                                <button id="subscribe-btn" onclick="window.purchaseApi(window.currentApiDetails.id)" 
+                                    style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; padding: 12px 28px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; white-space: nowrap; height: fit-content;">
+                                    Subscribe Now
+                                </button>
+                            </div>
+
+                            <!-- Quick Stats -->
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 20px 0; border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08);">
+                                <div style="text-align: center;">
+                                    <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">Category</div>
+                                    <div id="details-category" style="font-size: 14px; font-weight: 600; color: #60a5fa;">Category</div>
+                                </div>
+                                <div style="text-align: center;">
+                                    <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">Price</div>
+                                    <div id="details-price" style="font-size: 14px; font-weight: 600; color: #10b981;">₹0/month</div>
+                                </div>
+                                <div style="text-align: center;">
+                                    <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">Rate Limit</div>
+                                    <div id="details-rate-limit" style="font-size: 14px; font-weight: 600; color: #f59e0b;">1000/day</div>
+                                </div>
+                                <div style="text-align: center;">
+                                    <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">Status</div>
+                                    <div style="font-size: 14px; font-weight: 600; color: #10b981;">🟢 Active</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Main Content Grid -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 32px;">
+
+                            <!-- Left Column: API Info & Pricing -->
+                            <div>
+
+                                <!-- Overview Card -->
+                                <div class="details-card">
+                                    <h2 style="font-size: 18px; font-weight: 700; color: #fff; margin: 0 0 16px 0;">Overview</h2>
+                                    <p id="details-full-description" style="color: #cbd5e1; line-height: 1.8; margin: 0;">API full description here</p>
+                                </div>
+
+                                <!-- Features Card -->
+                                <div class="details-card">
+                                    <h2 style="font-size: 18px; font-weight: 700; color: #fff; margin: 0 0 16px 0;">Key Features</h2>
+                                    <ul id="details-features" style="list-style: none; padding: 0; margin: 0;">
+                                        <li style="display: flex; align-items: center; gap: 10px; padding: 8px 0; color: #cbd5e1;">
+                                            <span style="color: #10b981;">✓</span> Real-time data access
+                                        </li>
+                                        <li style="display: flex; align-items: center; gap: 10px; padding: 8px 0; color: #cbd5e1;">
+                                            <span style="color: #10b981;">✓</span> High availability (99.9% uptime)
+                                        </li>
+                                        <li style="display: flex; align-items: center; gap: 10px; padding: 8px 0; color: #cbd5e1;">
+                                            <span style="color: #10b981;">✓</span> Webhook support
+                                        </li>
+                                        <li style="display: flex; align-items: center; gap: 10px; padding: 8px 0; color: #cbd5e1;">
+                                            <span style="color: #10b981;">✓</span> CORS enabled
+                                        </li>
+                                    </ul>
+                                </div>
+
+                            </div>
+
+                            <!-- Right Column: Developer Section -->
+                            <div>
+
+                                <!-- Endpoint Card -->
+                                <div class="details-card">
+                                    <h2 style="font-size: 18px; font-weight: 700; color: #fff; margin: 0 0 16px 0;">📍 Base Endpoint</h2>
+                                    <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-family: monospace; font-size: 13px; color: #60a5fa; overflow-x: auto;">
+                                        <span style="color: #f472b6;">GET</span> <span id="details-endpoint">/api/v1/resource</span>
+                                    </div>
+                                    <p style="font-size: 12px; color: #94a3b8; margin: 0;">Include your API key in the header: <code style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">x-api-key: YOUR_API_KEY</code></p>
+                                </div>
+
+                                <!-- Example Response Card -->
+                                <div class="details-card">
+                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                                        <h2 style="font-size: 18px; font-weight: 700; color: #fff; margin: 0;">📤 Example Response</h2>
+                                        <button onclick="window.copyCode('example-response')" 
+                                            style="background: rgba(59, 130, 246, 0.15); border: 1px solid #3b82f6; color: #60a5fa; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600;">
+                                            Copy
+                                        </button>
+                                    </div>
+                                    <pre id="example-response" style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 12px; margin: 0; font-size: 12px; color: #cbd5e1; overflow-x: auto;"><span style="color: #10b981;">{</span>
+  <span style="color: #60a5fa;">"status"</span>: <span style="color: #fbbf24;">"success"</span>,
+  <span style="color: #60a5fa;">"data"</span>: <span style="color: #10b981;">{</span>
+    <span style="color: #60a5fa;">"id"</span>: <span style="color: #fbbf24;">123</span>,
+    <span style="color: #60a5fa;">"value"</span>: <span style="color: #fbbf24;">"example_value"</span>,
+    <span style="color: #60a5fa;">"timestamp"</span>: <span style="color: #fbbf24;">"2024-04-12T10:30:00Z"</span>
+  <span style="color: #10b981;">}</span>
+<span style="color: #10b981;">}</span></pre>
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                        <!-- JavaScript Example Section -->
+                        <div class="details-card" style="margin-top: 28px;">
+                            <h2 style="font-size: 18px; font-weight: 700; color: #fff; margin: 0 0 16px 0;">💡 Quick Start (JavaScript)</h2>
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                                <span style="font-size: 12px; color: #94a3b8;">Sample integration code</span>
+                                <button onclick="window.copyCode('js-example')" 
+                                    style="background: rgba(59, 130, 246, 0.15); border: 1px solid #3b82f6; color: #60a5fa; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600; margin-left: auto;">
+                                    Copy Code
+                                </button>
+                            </div>
+                            <pre id="js-example" style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 16px; margin: 0; font-size: 12px; color: #cbd5e1; overflow-x: auto; line-height: 1.6;"><span style="color: #c084fc;">const</span> apiKey = <span style="color: #fbbf24;">'YOUR_API_KEY'</span>;
+
+<span style="color: #c084fc;">fetch</span>(<span style="color: #fbbf24;">'https://apihub.com/api/v1/resource'</span>, {
+  headers: {
+    <span style="color: #fbbf24;">'x-api-key'</span>: apiKey,
+    <span style="color: #fbbf24;">'Content-Type'</span>: <span style="color: #fbbf24;">'application/json'</span>
+  }
+})
+.<span style="color: #a78bfa;">then</span>(res => res.<span style="color: #a78bfa;">json</span>())
+.<span style="color: #a78bfa;">then</span>(data => <span style="color: #c084fc;">console</span>.<span style="color: #a78bfa;">log</span>(data))</pre>
+                        </div>
+
+                    </div>
+                </section>
 
                 <!-- 3. USAGE SECTION -->
                 <section id="usage-section" class="page-section">
