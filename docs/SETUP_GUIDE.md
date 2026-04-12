@@ -99,23 +99,162 @@ WALLET_ADDRESS=0x...your-wallet...
 
 ### How to Get Gmail App Password
 
+**Video Guide:** [YouTube - Gmail App Password](https://support.google.com/accounts/answer/185833)
+
 1. Go to [Google Account](https://myaccount.google.com)
 2. Click "Security" in left menu
-3. Enable "2-Step Verification" (if not enabled)
-4. Find "App passwords" option
-5. Select "Mail" and "Windows Computer"
-6. Google generates a 16-character password
-7. Copy it to `EMAIL_PASS` in `.env`
+3. Enable "2-Step Verification" (if not enabled):
+   - Click "2-Step Verification"
+   - Click "Get started"
+   - Enter your phone number
+   - Verify code sent to phone
+   - Save recovery codes in safe place
+4. Find "App passwords" option (only appears after 2FA is enabled)
+5. You'll see a dropdown - Select:
+   - **App:** Mail
+   - **Device:** Windows Computer (or your OS)
+6. Click "Generate"
+7. Google shows 16-character password: `xxxx xxxx xxxx xxxx`
+8. Copy **without spaces**: `xxxxxxxxxxxxxxxx`
+9. Paste into `.env`:
+   ```
+   EMAIL_USER=john.doe@gmail.com
+   EMAIL_PASS=xxxxxxxxxxxxxxxx
+   ```
 
-**Example:**
+⚠️ **IMPORTANT:** Use the **App Password** (16 chars), NOT your regular Gmail password!
+
+**Test Email Service:**
+```bash
+node test_email_config.js
 ```
-EMAIL_USER=john.doe@gmail.com
-EMAIL_PASS=xyzabcdefghijklm
+
+Expected output:
 ```
+✓ Email service initialized
+✓ Email credentials verified
+✓ Ready to send OTP and notifications
+```
+
+### Troubleshooting Email
+
+| Issue | Solution |
+|-------|----------|
+| "Invalid login" error | Use Gmail app password, not regular password |
+| "Less secure apps blocked" | Install app password (2FA must be enabled) |
+| "SMTP connection timeout" | Check internet connection, verify EMAIL_USER |
+| OTP not received | Check spam folder, verify EMAIL_USER is correct |
+| "535 5.7.8 Authentication failed" | Remove spaces from app password in .env |
 
 ---
 
-## 🗄️ Step 4: Initialize Database
+---
+
+## ⛅ Weather API Setup (Optional - for Real API Integration)
+
+If you want to test real API integration (not just mock data):
+
+### Get OpenWeatherMap API Key
+
+1. Visit [OpenWeatherMap](https://openweathermap.org/api)
+2. Click "Sign Up" → Create free account
+3. Confirm email
+4. Go to [API Keys](https://home.openweathermap.org/api_keys)
+5. Copy your "Default" API key (25-40 characters)
+6. Add to `.env`:
+   ```
+   WEATHER_API_KEY=abc123def456ghi789jkl001mnop234qrs
+   ```
+
+### Test Weather API
+
+```bash
+# Start server
+npm run dev
+
+# In another terminal / browser, test:
+curl "http://localhost:3000/api/weather?city=london"
+
+# Expected response:
+{
+  "city": "London",
+  "temperature": 15.5,
+  "weather": "Partly cloudy",
+  "humidity": 65
+}
+```
+
+### Add More Real APIs
+
+The project includes weather as example. To add more APIs:
+
+1. Create new file: `routes/yourapi.js`
+2. Add route handler with API key from `.env`
+3. Import route in `server.js`
+4. Test with cURL or Postman
+
+---
+
+## ⛓️ Blockchain Setup (Optional - for Crypto Payments)
+
+If you want to test MetaMask wallet integration and crypto payments:
+
+### Install MetaMask
+
+1. Go to [MetaMask.io](https://metamask.io)
+2. Click "Download" for your browser
+3. Select your browser (Chrome, Firefox, Edge, etc.)
+4. Click "Install"
+5. Create new wallet:
+   - Click "Create a new wallet"
+   - Create password (strong!)
+   - Save seed phrase in secure location (12 words)
+   - Confirm seed phrase
+
+**⚠️ CRITICAL:** Never share your seed phrase! Anyone with it can access your wallet!
+
+### Add Monad Testnet Network
+
+1. Open MetaMask (click extension icon)
+2. Click network dropdown at top (shows "Ethereum Mainnet")
+3. Click "Add network"
+4. Fill in:
+   - **Network name:** Monad Testnet
+   - **RPC URL:** https://testnet-rpc.monad.xyz/
+   - **Chain ID:** 10143
+   - **Currency symbol:** MON
+   - **Block explorer URL:** https://testnet-explorer.monad.xyz/
+5. Click "Save"
+6. Switch to "Monad Testnet" network
+
+### Get Test Tokens
+
+1. Go to [Monad Faucet](https://testnet-faucet.monad.xyz/) (if available)
+2. OR ask Monad community for test tokens
+3. You'll receive free test MON (not real money!)
+
+### Configure Wallet Address
+
+1. In MetaMask, open "Account 1"
+2. Click address (0x...) to copy
+3. Update `.env`:
+   ```
+   WALLET_ADDRESS=0x1234567890abcdef1234567890abcdef12345678
+   MONAD_RPC_URL=https://testnet-rpc.monad.xyz/
+   ```
+
+### Test Crypto Payment
+
+1. Run server: `npm run dev`
+2. Open http://localhost:3000
+3. Go to an API detail page
+4. Click "Pay with Crypto"
+5. MetaMask should pop up
+6. Click "Connect"
+7. Approve transaction in MetaMask
+8. Should show success or error
+
+---
 
 The database initializes automatically on first run, but you can manually create it:
 
@@ -498,6 +637,80 @@ Before pushing to production:
 - [ ] No hardcoded credentials
 - [ ] `.env` variables configured
 - [ ] Database initialized
+- [ ] All optional services (Email, Weather, Crypto) tested
+- [ ] No sensitive data in version control
+- [ ] npm audit passes (no critical vulnerabilities)
+
+---
+
+## 📋 Quick Reference - Environment Variables
+
+| Variable | Purpose | Required | Example |
+|----------|---------|----------|---------|
+| `PORT` | Server port | No | 3000 |
+| `NODE_ENV` | Environment | No | development |
+| `EMAIL_USER` | Gmail address | Yes* | user@gmail.com |
+| `EMAIL_PASS` | Gmail app password | Yes* | xxxxxxxxxxxxxxxx |
+| `WEATHER_API_KEY` | OpenWeatherMap key | No | abc123def... |
+| `DATABASE_PATH` | SQLite file | No | ./app.db |
+| `MONAD_RPC_URL` | Blockchain RPC | No | https://testnet-rpc.monad.xyz/ |
+| `WALLET_ADDRESS` | Crypto wallet | No | 0x1234... |
+
+*Required if using email/OTP features
+
+---
+
+## 🧪 Quick Test Commands
+
+```bash
+# Install dependencies
+npm install
+
+# Start dev server
+npm run dev
+
+# Test email service
+node test_email_config.js
+
+# Test all functionality
+npm test
+
+# Test weather API
+curl "http://localhost:3000/api/weather?city=london"
+
+# Check database
+sqlite3 app.db ".tables"
+
+# Kill port if stuck
+npx kill-port 3000
+```
+
+---
+
+## 📞 Troubleshooting Quick Links
+
+- **Email not working?** → See [Email Troubleshooting](#troubleshooting-email)
+- **Port already in use?** → See [Common Issues](#issue-port-3000-already-in-use)
+- **Database errors?** → See [Common Issues](#issue-database-locked)
+- **Module not found?** → See [Common Issues](#issue-cannot-find-module-express)
+
+---
+
+## 🎓 Learn More
+
+- Express.js: [expressjs.com](https://expressjs.com/)
+- SQLite: [sqlite.org](https://www.sqlite.org/)
+- Nodemailer: [nodemailer.com](https://nodemailer.com/)
+- MetaMask: [metamask.io](https://metamask.io/)
+- REST APIs: [restfulapi.net](https://restfulapi.net/)
+
+---
+
+**Questions?** Check the other docs:
+- 📖 [README.md](./README.md) - Project overview
+- 🔗 [API_DOCUMENTATION.md](./API_DOCUMENTATION.md) - All API endpoints
+- 🚀 [DEPLOYMENT.md](./DEPLOYMENT.md) - Deploy to production
+- 🔧 [REFACTORING_GUIDE.md](./REFACTORING_GUIDE.md) - Code structure
 - [ ] Error handling in place
 - [ ] Logging working
 - [ ] Security audit passed
