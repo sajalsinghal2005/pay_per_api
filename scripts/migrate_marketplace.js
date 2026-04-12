@@ -1,7 +1,8 @@
-const sqlite3 = require('sqlite3').verbose();
+require('../config/database');
+const { db } = require('../config/database');
 const path = require('path');
 const dbPath = path.join(__dirname, 'app.db');
-const db = new sqlite3.Database(dbPath);
+
 
 const migrations = [
     { table: 'apis', column: 'badge', type: 'TEXT' },

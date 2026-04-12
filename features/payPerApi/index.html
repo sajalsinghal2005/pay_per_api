@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -6,20 +6,21 @@
     <title>API Hub</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
 </head>
 
 <!-- SCRIPTS -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
-        const API_BASE_URL = ''; // Always use relative paths for reliability
+        const API_BASE_URL = ''; 
 
         // Global Chart Instances to prevent reuse errors
         let userTrafficChartInstance = null;
         let userUsageWeekChartInstance = null;
         let userResponseTimeChartInstance = null;
         let userErrorDistChartInstance = null;
+        let adminUsageChartInstance = null;
 
         // --- UI Helper Functions ---
         window.showToast = (message, type = 'success') => {
@@ -45,7 +46,7 @@
             const input = document.getElementById(inputId);
             if (input.type === 'password') {
                 input.type = 'text';
-                btn.textContent = '🔒'; // Swaps eye to lock
+                btn.textContent = '🔒'; 
             } else {
                 input.type = 'password';
                 btn.textContent = '👁';
@@ -77,24 +78,37 @@
             const statusEl = document.getElementById('metamask-status');
             const addrEl = document.getElementById('metamask-address');
             const connectBtn = document.getElementById('connect-wallet-btn');
+            const executeBtn = document.getElementById('execute-purchase-btn');
 
             if (typeof window.ethereum !== 'undefined') {
                 statusEl.textContent = "MetaMask Detected";
                 statusEl.style.color = "#10b981";
                 
-                const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-                if (accounts.length > 0) {
-                    addrEl.textContent = accounts[0].substring(0, 6) + '...' + accounts[0].substring(38);
-                    connectBtn.style.display = 'none';
-                    window.userWalletAddress = accounts[0];
-                } else {
-                    addrEl.textContent = "Not Connected";
-                    connectBtn.style.display = 'block';
+                try {
+                    const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                    if (accounts.length > 0) {
+                        addrEl.textContent = accounts[0].substring(0, 6) + '...' + accounts[0].substring(38);
+                        connectBtn.style.display = 'none';
+                        window.userWalletAddress = accounts[0];
+                        executeBtn.disabled = false;
+                        executeBtn.textContent = "Pay with MetaMask";
+                    } else {
+                        addrEl.textContent = "Not Connected";
+                        connectBtn.style.display = 'block';
+                        executeBtn.disabled = true;
+                        executeBtn.textContent = "Connect Wallet First";
+                    }
+                } catch (err) {
+                    addrEl.textContent = "Connection Error";
+                    executeBtn.disabled = true;
                 }
             } else {
                 statusEl.textContent = "MetaMask Not Installed";
                 statusEl.style.color = "#ef4444";
                 connectBtn.textContent = "Install MetaMask";
+                connectBtn.style.display = 'block';
+                executeBtn.disabled = true;
+                executeBtn.textContent = "MetaMask Required";
                 connectBtn.onclick = () => window.open('https://metamask.io/download/', '_blank');
             }
         };
@@ -112,8 +126,9 @@
         };
 
         window.payWithMetaMask = async () => {
-            if (typeof ethers === 'undefined') {
-                return showToast("Blockchain library still loading, please wait...", "error");
+            const eth = window.ethers || ethers;
+            if (typeof eth === 'undefined') {
+                return showToast("Blockchain library still loading, please refresh the page.", "error");
             }
             if (!window.userWalletAddress) {
                 return showToast("Please connect MetaMask first", "error");
@@ -124,11 +139,12 @@
             executeBtn.textContent = "Confirming in MetaMask...";
 
             try {
-                const provider = new ethers.providers.Web3Provider(window.ethereum);
+                // Ethers v5 syntax
+                const provider = new eth.providers.Web3Provider(window.ethereum);
                 const signer = provider.getSigner();
                 
                 // Minimum amount 0.001 ETH
-                const amount = ethers.utils.parseEther("0.001");
+                const amount = eth.utils.parseEther("0.001");
                 const receiverAddress = "0x7894561230987456123098745612309874561230"; // Mock owner address
 
                 const tx = await signer.sendTransaction({
@@ -167,6 +183,48 @@
             } catch (err) {
                 showToast("Payment Failed: " + err.message, "error");
             } finally {
+                if (document.getElementById('purchase-confirm-modal').classList.contains('active')) {
+                    executeBtn.disabled = false;
+                    executeBtn.textContent = window.selectedPurchaseMethod === 'crypto' ? "Pay with MetaMask" : "Confirm Purchase";
+                }
+            }
+        };
+
+        window.executePurchase = async () => {
+            if (window.selectedPurchaseMethod === 'crypto') {
+                return payWithMetaMask();
+            }
+
+            try {
+                const executeBtn = document.getElementById('execute-purchase-btn');
+                executeBtn.disabled = true;
+                executeBtn.textContent = 'Processing...';
+
+                const res = await fetch(API_BASE_URL + '/api/apis/purchase-credits', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUser.id, apiId: window.pendingPurchaseApiId })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast("API Purchased successfully!");
+                    if (data.newBalance !== undefined) {
+                        currentUser.credits = data.newBalance;
+                        const sidebarBalance = document.getElementById('sidebar-balance');
+                        if (sidebarBalance) sidebarBalance.textContent = `₹ ${data.newBalance.toLocaleString()}`;
+                    }
+                    togglePurchaseModal(false);
+                    // Reload dashboards
+                    loadUserDashboard();
+                    loadUserBilling();
+                } else {
+                    showToast(data.message, "error");
+                }
+            } catch(err) {
+                showToast("Error processing payment", "error");
+            } finally {
+                const executeBtn = document.getElementById('execute-purchase-btn');
                 executeBtn.disabled = false;
                 executeBtn.textContent = window.selectedPurchaseMethod === 'crypto' ? "Pay with MetaMask" : "Confirm Purchase";
             }
@@ -328,6 +386,9 @@
         };
 
         window.saveAccountChanges = async () => {
+            const btn = document.getElementById('save-account-btn');
+            const originalText = btn.textContent;
+            
             const fullName = document.getElementById('set-fullname').value.trim();
             const email = document.getElementById('set-email').value;
             const organization = document.getElementById('set-org').value;
@@ -341,6 +402,9 @@
             }
 
             try {
+                btn.disabled = true;
+                btn.textContent = "Saving...";
+                
                 const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/settings`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -348,13 +412,17 @@
                 });
                 const data = await res.json();
                 if (data.success) {
-                    showToast("Account changes saved!");
+                    showToast("Changes saved successfully");
                     document.getElementById('set-pass').value = ''; // Clear password field
+                    document.getElementById('set-pass-strength-container').style.display = 'none';
                 } else {
                     showToast("Failed: " + data.message, "error");
                 }
             } catch (err) {
                 showToast("Error saving account changes.", "error");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
             }
         };
 
@@ -434,8 +502,16 @@
                 });
         };
 
-        window.regenerateApiKey = async () => {
-            if (!confirm("Are you sure? Your old API key will stop working immediately.")) return;
+        window.closeConfirmModal = () => {
+            document.getElementById('confirm-modal').classList.remove('active');
+        };
+
+        window.regenerateApiKey = () => {
+            document.getElementById('confirm-modal').classList.add('active');
+        };
+
+        window.confirmRegenerateKey = async () => {
+            closeConfirmModal();
             try {
                 const res = await fetch(API_BASE_URL + `/api/user/${currentUser.id}/apiKey/regenerate`, { method: 'POST' });
                 const data = await res.json();
@@ -555,6 +631,44 @@
             }
         });
 
+        // Settings Password Strength (Separate from Registration)
+        const setPass = document.getElementById('set-pass');
+        const setStrengthContainer = document.getElementById('set-pass-strength-container');
+        const setStrengthBar = document.getElementById('set-strength-bar');
+        const setStrengthText = document.getElementById('set-strength-text');
+
+        if (setPass) {
+            setPass.addEventListener('input', () => {
+                const pass = setPass.value;
+                if (pass.length === 0) {
+                    setStrengthContainer.style.display = 'none';
+                    return;
+                }
+                setStrengthContainer.style.display = 'block';
+
+                let strength = 0;
+                if (pass.length >= 8) strength += 25;
+                if (/[A-Z]/.test(pass)) strength += 25;
+                if (/[0-9]/.test(pass)) strength += 25;
+                if (/[^A-Za-z0-9]/.test(pass)) strength += 25;
+
+                setStrengthBar.style.width = strength + '%';
+                if (strength < 50) {
+                    setStrengthBar.style.backgroundColor = '#ef4444';
+                    setStrengthText.textContent = 'Weak - Keep going...';
+                    setStrengthText.style.color = '#ef4444';
+                } else if (strength < 100) {
+                    setStrengthBar.style.backgroundColor = '#f59e0b';
+                    setStrengthText.textContent = 'Medium - Good progress';
+                    setStrengthText.style.color = '#f59e0b';
+                } else {
+                    setStrengthBar.style.backgroundColor = '#10b981';
+                    setStrengthText.textContent = 'Strong - Perfect!';
+                    setStrengthText.style.color = '#10b981';
+                }
+            });
+        }
+
         // Handle Signup
         signupForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -565,7 +679,6 @@
             const pass = document.getElementById('reg-pass').value;
             const confirmPass = document.getElementById('reg-confirm-pass').value;
 
-            // Validate passwords match
             if (pass !== confirmPass) return showToast("Passwords do not match!", "error");
             if (pass.length < 8 || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) {
                 return showToast("Password must be at least 8 chars, 1 uppercase, 1 number.", "error");
@@ -583,32 +696,32 @@
                 });
                 const data = await res.json();
                 if (data.success) {
-                    showToast("Account created! Please login.", "success");
+                    showToast("Welcome! Registration successful.");
                     signupForm.reset();
                     signupView.style.display = 'none';
                     loginView.style.display = 'flex';
                 } else {
-                    showToast(data.message || "Signup failed", "error");
-                    signupBtn.disabled = false;
-                    signupBtn.textContent = "Create Account";
+                    showToast(data.message, "error");
                 }
             } catch (err) {
-                console.error("Signup error:", err);
-                showToast("Failed to create account. Try again.", "error");
+                showToast("Registration failed", "error");
+            } finally {
                 signupBtn.disabled = false;
                 signupBtn.textContent = "Create Account";
             }
         });
+
+        // Resend Timer Logic Removed
 
         // Handle Login
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('login-email').value;
             const password = document.getElementById('login-pass').value;
-            const loginBtn = document.getElementById('login-btn');
 
+            const loginBtn = document.getElementById('login-btn');
             loginBtn.disabled = true;
-            loginBtn.textContent = "Signing in...";
+            loginBtn.textContent = "Checking...";
 
             try {
                 const res = await fetch(API_BASE_URL + '/login', {
@@ -619,18 +732,20 @@
 
                 const data = await res.json();
 
-                if (data.success && data.user) {
-                    currentUser = data.user;
-                    showToast("Login successful!", "success");
-                    loginSuccess();
-                } else {
+                if (!res.ok || !data.success) {
                     showToast(data.message || "Login failed", "error");
                     loginBtn.disabled = false;
                     loginBtn.textContent = "Sign In";
+                    return;
                 }
+
+                // Successful log in
+                currentUser = data.user;
+                loginSuccess();
+
             } catch (err) {
-                console.error("Login error:", err);
-                showToast("Network error. Please try again.", "error");
+                console.error("Login fetch error:", err);
+                showToast("Network error or server down", "error");
                 loginBtn.disabled = false;
                 loginBtn.textContent = "Sign In";
             }
@@ -642,7 +757,7 @@
             const email = document.getElementById('forgot-pass-email').value;
             const forgotBtn = document.getElementById('forgot-pass-btn');
             forgotBtn.disabled = true;
-            forgotBtn.textContent = "Checking...";
+            forgotBtn.textContent = "Sending...";
 
             try {
                 const res = await fetch(API_BASE_URL + '/forgot-password', {
@@ -652,18 +767,17 @@
                 });
                 const data = await res.json();
                 if (data.success) {
-                    showToast("Proceed to reset your password.", "success");
+                    showToast("User verified. Please enter a new password.");
                     window.forgotEmail = email;
+                    window.forgotUserId = data.userId;
                     forgotPassView.style.display = 'none';
                     resetPassView.style.display = 'flex';
                 } else {
                     showToast(data.message, "error");
-                    forgotBtn.disabled = false;
-                    forgotBtn.textContent = "Continue";
                 }
             } catch (err) {
-                console.error("Forgot password error:", err);
                 showToast("Server error", "error");
+            } finally {
                 forgotBtn.disabled = false;
                 forgotBtn.textContent = "Continue";
             }
@@ -676,37 +790,29 @@
             const confirmPassword = document.getElementById('reset-confirm-pass').value;
 
             if (newPassword !== confirmPassword) return showToast("Passwords do not match", "error");
-            if (newPassword.length < 8) return showToast("Password must be at least 8 characters", "error");
-
-            const resetBtn = document.getElementById('reset-pass-btn');
-            resetBtn.disabled = true;
-            resetBtn.textContent = "Updating...";
+            if (newPassword.length < 8) return showToast("Password too short", "error");
 
             try {
                 const res = await fetch(API_BASE_URL + '/reset-password', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        userId: window.forgotUserId,
                         email: window.forgotEmail,
                         newPassword
                     })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    showToast("Password updated! Please login.", "success");
+                    showToast("Password updated! Please login.");
                     resetPassForm.reset();
                     resetPassView.style.display = 'none';
                     loginView.style.display = 'flex';
                 } else {
-                    showToast(data.message || "Password reset failed", "error");
-                    resetBtn.disabled = false;
-                    resetBtn.textContent = "Update Password";
+                    showToast(data.message, "error");
                 }
             } catch (err) {
-                console.error("Reset password error:", err);
-                showToast("An error occurred", "error");
-                resetBtn.disabled = false;
-                resetBtn.textContent = "Update Password";
+                showToast("An error occurred during password reset.", "error");
             }
         });
 
@@ -749,6 +855,12 @@
                 // Update Active APIs Count
                 document.querySelector('#user-dashboard-section .overview .box:nth-child(2) h2').textContent = data.activeApis.length;
 
+                // Update Top Used API
+                const topUsedApiEl = document.getElementById('user-top-api');
+                if (topUsedApiEl) {
+                    topUsedApiEl.textContent = data.activeApis.length > 0 ? data.activeApis[0].name : 'No APIs Yet';
+                }
+
                 // Update API Key
                 const keyDisplay = document.getElementById('dashboard-apiKey');
                 if (keyDisplay) {
@@ -774,7 +886,7 @@
                                     </div>
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <button class="small" style="background: white; border: 1px solid #e2e8f0; color: #475569; padding: 6px 12px; margin: 0;" onclick="viewDocumentation(${api.apiId}, '${api.api_key}')">Docs</button>
+                                    <button class="small btn-outline-primary" style="padding: 6px 12px; margin: 0;" onclick="viewDocumentation(${api.apiId}, '${api.api_key}')">Docs</button>
                                     <button class="small danger" style="padding: 6px 10px; margin: 0;" onclick="removeApi(${api.apiId})">×</button>
                                 </div>
                             `;
@@ -856,9 +968,33 @@
         window.setTopupAmount = (amt) => {
             document.getElementById('custom-topup-amount').value = amt;
             document.querySelectorAll('.amount-pill').forEach(btn => {
-                const btnAmt = parseInt(btn.textContent.replace('₹ ', '').replace(',', ''));
+                const btnAmt = parseInt(btn.textContent.replace('₹', '').replace(',', ''));
                 btn.classList.toggle('active', btnAmt === amt);
             });
+            validateTopupAmount();
+        };
+
+        window.handleCustomAmountInput = () => {
+            const inputVal = parseInt(document.getElementById('custom-topup-amount').value);
+            document.querySelectorAll('.amount-pill').forEach(btn => {
+                const btnAmt = parseInt(btn.textContent.replace('₹', '').replace(',', ''));
+                btn.classList.toggle('active', btnAmt === inputVal);
+            });
+            validateTopupAmount();
+        };
+
+        window.validateTopupAmount = () => {
+            const amount = parseInt(document.getElementById('custom-topup-amount').value);
+            const btn = document.getElementById('process-topup-btn');
+            if (!amount || amount <= 0) {
+                btn.disabled = true;
+                btn.style.opacity = '0.7';
+                btn.style.cursor = 'not-allowed';
+            } else {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            }
         };
 
         window.selectPaymentMethod = (el, method) => {
@@ -872,8 +1008,11 @@
             if (!amount || amount <= 0) return alert("Please enter a valid amount");
 
             const btn = document.getElementById('process-topup-btn');
-            const originalText = btn.textContent;
-            btn.textContent = "Processing Payment...";
+            const btnText = btn.querySelector('.btn-text');
+            const btnLoader = btn.querySelector('.btn-loader');
+            
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'inline-block';
             btn.disabled = true;
 
             try {
@@ -902,8 +1041,9 @@
             } catch (err) {
                 showToast("Error processing top-up", "error");
             } finally {
-                btn.textContent = originalText;
-                btn.disabled = false;
+                btnText.style.display = 'inline-block';
+                btnLoader.style.display = 'none';
+                validateTopupAmount(); // Re-evaluate disabled state
             }
         };
 
@@ -1082,7 +1222,6 @@
             apis.forEach(api => {
                 const card = document.createElement('div');
                 card.className = 'api-card';
-                card.style.cursor = 'pointer';
                 const badgeHtml = api.badge ? `<div class="api-badge badge-${api.badge.toLowerCase()}">${api.badge}</div>` : '';
                 card.innerHTML = `
                         ${badgeHtml}
@@ -1095,10 +1234,9 @@
                                 <span class="price-val">₹${api.price}</span>
                                 <span class="price-sub">per month</span>
                             </div>
-                            <button onclick="window.event.stopPropagation(); showApiDetails(${api.id})">Request Access</button>
+                            <button onclick="purchaseApi(${api.id})">Request Access</button>
                         </div>
                    `;
-                card.addEventListener('click', () => showApiDetails(api.id));
                 container.appendChild(card);
             });
         }
@@ -1128,90 +1266,6 @@
         };
 
         // Make purchaseApi global so onclick works
-        window.showApiDetails = (apiId) => {
-            if (!currentUser) return showToast("Please login first", "error");
-            const api = allMarketplaceApis.find(a => a.id === apiId);
-            if (!api) return showToast("API not found", "error");
-            
-            window.currentApiDetails = api;
-            populateApiDetailsPage(api);
-            showSection('api-details-section');
-        };
-
-        window.populateApiDetailsPage = (api) => {
-            // Header section
-            document.getElementById('details-api-image').src = api.image || 'https://via.placeholder.com/120';
-            document.getElementById('details-api-name').textContent = api.name;
-            document.getElementById('details-api-provider').textContent = `By ${api.provider}`;
-            document.getElementById('details-api-description').textContent = api.description;
-            
-            // Quick stats
-            document.getElementById('details-category').textContent = api.category || 'General';
-            document.getElementById('details-price').textContent = `₹${api.price}/month`;
-            document.getElementById('details-rate-limit').textContent = api.rateLimit || '1000/day';
-            
-            // Full description
-            document.getElementById('details-full-description').textContent = api.fullDescription || api.description;
-            
-            // Features
-            const featuresHtml = (api.features || [
-                'Real-time data access',
-                'High availability (99.9% uptime)',
-                'Webhook support',
-                'CORS enabled'
-            ]).map(f => `
-                <li style="display: flex; align-items: center; gap: 10px; padding: 8px 0; color: #cbd5e1;">
-                    <span style="color: #10b981;">✓</span> ${f}
-                </li>
-            `).join('');
-            document.getElementById('details-features').innerHTML = featuresHtml;
-            
-            // Endpoint
-            const endpoint = api.endpoint || '/api/v1/resource';
-            const method = api.method || 'GET';
-            document.getElementById('details-endpoint').innerHTML = `<span style="color: #f472b6; font-weight: 600;">${method}</span> <span style="color: #60a5fa;">${endpoint}</span>`;
-            
-            // Example Response
-            const exampleResponse = api.exampleResponse || {
-                status: "success",
-                data: {
-                    id: 123,
-                    value: "example_value",
-                    timestamp: new Date().toISOString()
-                }
-            };
-            document.getElementById('example-response').textContent = JSON.stringify(exampleResponse, null, 2);
-            
-            // Example Request (JS)
-            const jsExample = api.jsExample || `const apiKey = 'YOUR_API_KEY';
-
-fetch('https://apihub.com${endpoint}', {
-  method: '${method}',
-  headers: {
-    'x-api-key': apiKey,
-    'Content-Type': 'application/json'
-  }
-})
-.then(res => res.json())
-.then(data => console.log(data))
-.catch(err => console.error(err));`;
-            document.getElementById('js-example').textContent = jsExample;
-        };
-
-        window.goBackToMarketplace = () => {
-            showSection('marketplace-section');
-        };
-
-        window.copyCode = (elementId) => {
-            const element = document.getElementById(elementId);
-            const text = element.textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                showToast("Code copied to clipboard!", "success");
-            }).catch(() => {
-                showToast("Failed to copy code", "error");
-            });
-        };
-
         window.purchaseApi = (apiId) => {
             if (!currentUser) return showToast("Please login first", "error");
             const api = allMarketplaceApis.find(a => a.id === apiId);
@@ -1519,6 +1573,35 @@ Thank you for using API Hub.
                         `;
                     apisContainer.appendChild(div);
                 });
+
+                // 6. Load Admin Usage Analytics Chart
+                const usageRes = await fetch(API_BASE_URL + '/api/admin/usage-stats');
+                const usageData = await usageRes.json();
+                
+                if (usageData.success && usageData.datasets.length > 0) {
+                    const ctx = document.getElementById('adminUsageChart');
+                    if (ctx) {
+                        if (adminUsageChartInstance) adminUsageChartInstance.destroy();
+                        adminUsageChartInstance = new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'],
+                                datasets: usageData.datasets
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { position: 'top', labels: { font: { family: 'Inter', size: 12 } } }
+                                },
+                                scales: {
+                                    y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' } },
+                                    x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' } }
+                                }
+                            }
+                        });
+                    }
+                }
 
             } catch (err) {
                 console.error("Admin dashboard error:", err);
@@ -1959,15 +2042,19 @@ Thank you for using API Hub.
             <p>Login to your account to continue</p>
 
             <form id="login-form" autocomplete="off">
-                <label>Email Address</label>
-                <input type="email" id="login-email" placeholder="name@company.com" required>
+                <div id="login-fields">
+                    <label>Email Address</label>
+                    <input type="email" id="login-email" placeholder="name@company.com" autocomplete="new-password" required>
 
-                <label style="display: flex; justify-content: space-between; align-items: center;">
-                    Password
-                    <a href="#" id="go-to-forgot-pass"
-                        style="font-size: 12px; color: #60a5fa; font-weight: 500; text-decoration: none;">Forgot?</a>
-                </label>
-                <input type="password" id="login-pass" placeholder="••••••••" required>
+                    <label style="display: flex; justify-content: space-between; align-items: center;">
+                        Password
+                        <a href="#" id="go-to-forgot-pass"
+                            style="font-size: 12px; color: #60a5fa; font-weight: 500; text-decoration: none;">Forgot?</a>
+                    </label>
+                    <input type="password" id="login-pass" placeholder="Enter your password" autocomplete="new-password" required>
+                </div>
+
+
 
                 <button type="submit" id="login-btn">Sign In</button>
             </form>
@@ -1985,8 +2072,8 @@ Thank you for using API Hub.
     <div id="forgot-pass-view" class="login-container" style="display: none;">
         <div class="login-card">
             <div class="icon">🔑</div>
-            <h2>Reset Password</h2>
-            <p>Enter your email to reset your password.</p>
+            <h2>Reset Access</h2>
+            <p>Enter your email to receive a verification code.</p>
 
             <form id="forgot-pass-form">
                 <label>Email Address</label>
@@ -2008,14 +2095,15 @@ Thank you for using API Hub.
         <div class="login-card">
             <div class="icon">🔓</div>
             <h2>Set New Password</h2>
-            <p>Enter your new password.</p>
+            <p>Verification complete. Choose a strong password.</p>
 
             <form id="reset-pass-form">
+
                 <label>New Password</label>
-                <input type="password" id="reset-new-pass" placeholder="••••••••" required>
+                <input type="password" id="reset-new-pass" placeholder="Enter new password" required>
 
                 <label>Confirm Password</label>
-                <input type="password" id="reset-confirm-pass" placeholder="••••••••" required>
+                <input type="password" id="reset-confirm-pass" placeholder="Confirm new password" required>
 
                 <button type="submit" id="reset-pass-btn">Update Password</button>
             </form>
@@ -2055,15 +2143,17 @@ Thank you for using API Hub.
                     <input type="email" id="reg-email" placeholder="john@example.com" required>
 
                     <label>Password</label>
-                    <input type="password" id="reg-pass" placeholder="••••••••" required>
+                    <input type="password" id="reg-pass" placeholder="Enter your password" required>
                     <div class="password-strength">
                         <div id="strength-bar" class="strength-bar"></div>
                     </div>
                     <div id="strength-text" class="strength-text">Use 8+ chars, mixed case & symbols</div>
 
                     <label>Confirm Password</label>
-                    <input type="password" id="reg-confirm-pass" placeholder="••••••••" required>
+                    <input type="password" id="reg-confirm-pass" placeholder="Confirm your password" required>
                 </div>
+
+
 
                 <button type="submit" id="signup-btn">Create Account</button>
             </form>
@@ -2097,8 +2187,11 @@ Thank you for using API Hub.
                     style="font-size: 16px; font-weight: 700; color: #fff; display: block; margin-bottom: 10px;">₹
                     0.00</span>
                 <button class="add-money-btn"
-                    style="background: linear-gradient(135deg, #10b981, #059669); font-weight: 700; letter-spacing: 0.5px;"
+                    style="background: linear-gradient(135deg, #10b981, #059669); font-weight: 700; letter-spacing: 0.5px; margin-bottom: 8px;"
                     onclick="window.showTopupModal()">+ ADD MONEY</button>
+                <button class="add-money-btn"
+                    style="background: transparent; border: 1px solid rgba(255, 255, 255, 0.2); color: white; opacity: 0.8;"
+                    onclick="document.querySelector('[data-target=\'billing-section\']').click()">Transaction History</button>
             </div>
         </aside>
 
@@ -2144,6 +2237,11 @@ Thank you for using API Hub.
                             <h2>145ms</h2>
                             <span>Global performance</span>
                         </div>
+                        <div class="box" style="border-bottom: 4px solid #3b82f6;">
+                            <h4>Top Used API</h4>
+                            <h2 id="user-top-api" style="font-size: 1.25em; margin-bottom: 8px;">GeoMapper Pro</h2>
+                            <span>Highest volume</span>
+                        </div>
                     </div>
 
                     <!-- Panels -->
@@ -2162,9 +2260,9 @@ Thank you for using API Hub.
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <code id="dashboard-apiKey"
                                         style="background: #1e293b; color: #10b981; padding: 8px 12px; border-radius: 4px; flex: 1; font-family: monospace;">•••••••••••••••••••••</code>
-                                    <button class="small" id="dashboard-toggle-key-btn" style="margin:0;"
+                                    <button class="small btn-outline-primary" id="dashboard-toggle-key-btn" style="margin:0; padding: 6px 14px;"
                                         onclick="toggleApiKeyVisibility('dashboard')">Show</button>
-                                    <button class="small" style="margin:0;"
+                                    <button class="small btn-outline-primary" style="margin:0; padding: 6px 14px;"
                                         onclick="copyApiKey('dashboard')">Copy</button>
                                 </div>
                             </div>
@@ -2254,7 +2352,16 @@ Thank you for using API Hub.
                     </div>
 
                     <!-- Admin Panels -->
-                    <!-- Admin Panels -->
+                    <div class="panels" style="margin-bottom: 20px;">
+                        <div class="panel">
+                            <h3>API Usage Analytics</h3>
+                            <p>Global API request volume over the last 7 days</p>
+                            <div style="height: 300px; width: 100%; margin-top: 15px;">
+                                <canvas id="adminUsageChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="panels" style="grid-template-columns: 1fr 1fr; gap: 20px;">
 
                         <!-- 1. Global System Configuration -->
@@ -2479,139 +2586,6 @@ Thank you for using API Hub.
                     </div>
                 </section>
 
-                <!-- 2.5 API DETAILS PAGE -->
-                <section id="api-details-section" class="page-section">
-                    <div class="api-details-container">
-                        <!-- Back Button -->
-                        <button onclick="goBackToMarketplace()" class="api-details-back-btn">
-                            <span>←</span> Back to Marketplace
-                        </button>
-
-                        <!-- API Header Section -->
-                        <div class="api-details-header">
-                            <!-- Top Row: Image, Info, and Subscribe Button -->
-                            <div class="api-header-top">
-                                <!-- API Image -->
-                                <div class="api-header-image">
-                                    <img id="details-api-image" src="" alt="API Logo">
-                                </div>
-                                
-                                <!-- API Information -->
-                                <div class="api-header-info">
-                                    <span class="api-header-badge">API</span>
-                                    <h1 id="details-api-name">API Name</h1>
-                                    <p class="provider" id="details-api-provider">By Provider Name</p>
-                                    <p id="details-api-description">API description goes here</p>
-                                </div>
-
-                                <!-- Subscribe Button -->
-                                <div class="api-header-button">
-                                    <button id="subscribe-btn" onclick="window.purchaseApi(window.currentApiDetails.id)">Subscribe Now</button>
-                                </div>
-                            </div>
-
-                            <!-- Quick Stats Section -->
-                            <div class="api-quick-stats">
-                                <div class="api-stat-item">
-                                    <div class="api-stat-label">Category</div>
-                                    <div class="api-stat-value" id="details-category">Category</div>
-                                </div>
-                                <div class="api-stat-item">
-                                    <div class="api-stat-label">Pricing</div>
-                                    <div class="api-stat-value" id="details-price">₹0/month</div>
-                                </div>
-                                <div class="api-stat-item">
-                                    <div class="api-stat-label">Rate Limit</div>
-                                    <div class="api-stat-value" id="details-rate-limit">1000/day</div>
-                                </div>
-                                <div class="api-stat-item">
-                                    <div class="api-stat-label">Status</div>
-                                    <div class="api-stat-value">🟢 Active</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Main Content Grid -->
-                        <div class="api-content-grid">
-
-                            <!-- LEFT COLUMN: Overview & Features -->
-                            <div>
-                                <!-- Overview Card -->
-                                <div class="api-details-card">
-                                    <h2>📋 Overview</h2>
-                                    <p id="details-full-description">API full description here</p>
-                                </div>
-
-                                <!-- Key Features Card -->
-                                <div class="api-details-card">
-                                    <h2>⭐ Key Features</h2>
-                                    <ul id="details-features">
-                                        <li><span>✓</span> Real-time data access</li>
-                                        <li><span>✓</span> High availability (99.9% uptime)</li>
-                                        <li><span>✓</span> Webhook support</li>
-                                        <li><span>✓</span> CORS enabled for web apps</li>
-                                        <li><span>✓</span> Comprehensive documentation</li>
-                                    </ul>
-                                </div>
-
-                                <!-- Pricing Plans Card -->
-                                <div class="api-details-card">
-                                    <h2>💰 Pricing</h2>
-                                    <div style="background: rgba(15,23,42,0.5); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 16px; word-wrap: break-word;">
-                                        <div style="font-size: 12px; color: #94a3b8; margin-bottom: 6px;">Monthly Plan</div>
-                                        <div style="font-size: 24px; font-weight: 700; color: #10b981; word-wrap: break-word;"><span id="pricing-amount">₹499</span><span style="font-size: 14px; color: #cbd5e1;">/month</span></div>
-                                        <div style="font-size: 12px; color: #94a3b8; margin-top: 8px;">Billed monthly • Cancel anytime</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- RIGHT COLUMN: Developer Section -->
-                            <div>
-                                <!-- Base Endpoint Card -->
-                                <div class="api-details-card">
-                                    <h2>📍 Base Endpoint</h2>
-                                    <div style="background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 14px; margin-bottom: 14px; font-family: 'Courier New', monospace; font-size: 13px; overflow-x: auto; line-height: 1.8; word-wrap: break-word;">
-                                        <span style="color: #f472b6; font-weight: 600;">GET</span><span style="color: #cbd5e1;"> </span><span id="details-endpoint" style="color: #60a5fa;">GET /api/v1/resource</span>
-                                    </div>
-                                    <div style="background: rgba(59, 130, 246, 0.08); border-left: 3px solid #3b82f6; padding: 12px; border-radius: 6px; font-size: 12px; color: #cbd5e1; line-height: 1.6; word-wrap: break-word;">
-                                        <strong style="color: #60a5fa;">Authentication:</strong><br>
-                                        Include API key in header: <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px; color: #fbbf24;">x-api-key: YOUR_API_KEY</code>
-                                    </div>
-                                </div>
-
-                                <!-- Example Response Card -->
-                                <div class="api-details-card">
-                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px;">
-                                        <h2 style="margin: 0;">📤 Example Response</h2>
-                                        <button onclick="window.copyCode('example-response')">📋 Copy JSON</button>
-                                    </div>
-                                    <pre id="example-response">{ ... }</pre>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Quick Start Section - Full Width -->
-                        <div class="api-details-card api-full-width-card">
-                            <h2>💡 Quick Start - JavaScript</h2>
-                            <p>Copy and paste this code into your project to get started:</p>
-                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px;">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <span style="display: inline-block; width: 24px; height: 24px; background: #fbbf24; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #0f172a; font-weight: 700; font-size: 12px;">JS</span>
-                                    <span style="font-size: 12px; color: #94a3b8;">JavaScript</span>
-                                </div>
-                                <button onclick="window.copyCode('js-example')">📋 Copy Code</button>
-                            </div>
-                            <pre id="js-example">// Your code here</pre>
-                        </div>
-
-                        <!-- Bottom CTA Section -->
-                        <div class="api-cta-section">
-                            <h3>Ready to integrate this API?</h3>
-                            <p>Get started in minutes with our comprehensive documentation and SDKs.</p>
-                            <button id="cta-subscribe-btn" onclick="window.purchaseApi(window.currentApiDetails.id)">Subscribe Now</button>
-                        </div>
-                    </div>
-                </section>
 
                 <!-- 3. USAGE SECTION -->
                 <section id="usage-section" class="page-section">
@@ -2826,9 +2800,15 @@ Thank you for using API Hub.
                                     <button type="button" class="eye-toggle"
                                         onclick="togglePasswordVisibility('set-pass', this)">👁</button>
                                 </div>
+                                <div class="settings-strength-container" id="set-pass-strength-container" style="display:none;">
+                                    <div class="settings-password-strength">
+                                        <div class="settings-strength-bar" id="set-strength-bar"></div>
+                                    </div>
+                                    <div class="settings-strength-text" id="set-strength-text">Use 8+ chars, mixed case & symbols</div>
+                                </div>
                             </div>
                         </div>
-                        <button class="prominent-btn" onclick="saveAccountChanges()">Save Account Changes</button>
+                        <button id="save-account-btn" class="prominent-btn" onclick="saveAccountChanges()">Save Account Changes</button>
                     </div>
 
                     <!-- API Keys -->
@@ -2920,49 +2900,59 @@ Thank you for using API Hub.
          TOP-UP MODAL
          ========================= -->
     <div id="topup-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Top-up Wallet</h3>
-                <button class="close-modal" onclick="window.hideTopupModal()">&times;</button>
+        <div class="modal-content" style="width: 440px; padding: 32px;">
+            <div class="modal-header" style="margin-bottom: 24px;">
+                <h3 style="font-size: 22px; color: #0f172a; margin: 0;">Top-up Wallet</h3>
+                <button class="close-modal" onclick="window.hideTopupModal()" style="font-size: 28px; line-height: 1;">&times;</button>
             </div>
 
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Choose an amount to add to your API Hub
-                wallet.</p>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 24px;">Select or enter an amount to add to your API Hub balance.</p>
 
             <div class="topup-amount-selector">
-                <button class="amount-pill" onclick="setTopupAmount(500)">₹ 500</button>
-                <button class="amount-pill active" onclick="setTopupAmount(1000)">₹ 1,000</button>
-                <button class="amount-pill" onclick="setTopupAmount(2000)">₹ 2,000</button>
-                <button class="amount-pill" onclick="setTopupAmount(5000)">₹ 5,000</button>
+                <button class="amount-pill" onclick="setTopupAmount(500)">₹500</button>
+                <button class="amount-pill active" onclick="setTopupAmount(1000)">₹1,000</button>
+                <button class="amount-pill" onclick="setTopupAmount(2000)">₹2,000</button>
+                <button class="amount-pill" onclick="setTopupAmount(5000)">₹5,000</button>
             </div>
 
-            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px;">Custom Amount</label>
-            <input type="number" id="custom-topup-amount" value="1000"
-                style="width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 20px;">
+            <div class="custom-amount-wrapper">
+                <span class="currency-symbol">₹</span>
+                <input type="number" id="custom-topup-amount" value="1000" placeholder="0.00" oninput="handleCustomAmountInput()">
+            </div>
 
-            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px;">Select Payment
-                Method</label>
+            <label style="display: block; font-size: 13px; font-weight: 600; margin: 24px 0 12px; color: #1e293b;">Payment Method</label>
             <div class="payment-options">
                 <div class="payment-method selected" onclick="selectPaymentMethod(this, 'card')">
-                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">💳</span>
-                    <span style="font-size: 12px; font-weight: 600;">Credit/Debit</span>
+                    <div class="method-icon-container" style="background: #e0e7ff; color: #4f46e5;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                    </div>
+                    <span>Card</span>
                 </div>
                 <div class="payment-method" onclick="selectPaymentMethod(this, 'upi')">
-                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">📱</span>
-                    <span style="font-size: 12px; font-weight: 600;">UPI / Google Pay</span>
+                    <div class="method-icon-container" style="background: #dcfce7; color: #16a34a;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                    </div>
+                    <span>UPI / GPay</span>
                 </div>
                 <div class="payment-method" onclick="selectPaymentMethod(this, 'paypal')">
-                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">🅿️</span>
-                    <span style="font-size: 12px; font-weight: 600;">PayPal</span>
+                    <div class="method-icon-container" style="background: #dbeafe; color: #2563eb;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16h6M7 8h8a4 4 0 0 1 0 8H7M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></svg>
+                    </div>
+                    <span>PayPal</span>
                 </div>
                 <div class="payment-method" onclick="selectPaymentMethod(this, 'bank')">
-                    <span style="font-size: 24px; display: block; margin-bottom: 5px;">🏦</span>
-                    <span style="font-size: 12px; font-weight: 600;">Net Banking</span>
+                    <div class="method-icon-container" style="background: #f1f5f9; color: #64748b;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path></svg>
+                    </div>
+                    <span>Net Banking</span>
                 </div>
             </div>
 
             <div class="topup-btn-container">
-                <button id="process-topup-btn" onclick="window.processTopup()">Proceed to Pay</button>
+                <button id="process-topup-btn" onclick="window.processTopup()">
+                    <span class="btn-text">Proceed to Pay</span>
+                    <svg class="btn-loader" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none; animation: spin 1s linear infinite;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+                </button>
             </div>
         </div>
     </div>
@@ -3029,6 +3019,20 @@ Thank you for using API Hub.
                     style="font-size: 16px; font-weight: 700; color: #10b981; font-family: monospace;">ak_svc_xxxxxxxx</code>
             </div>
             <button style="width: 100%;" onclick="toggleSuccessModal(false)">Go to Dashboard</button>
+        </div>
+    </div>
+    <!-- =========================
+         CONFIRMATION MODAL
+         ========================= -->
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="modal-content confirmation" style="width: 400px; padding: 32px; border-radius: 20px;">
+            <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
+            <h3>Regenerate API Key?</h3>
+            <p>Are you sure you want to regenerate the API key? Your old key will stop working immediately.</p>
+            <div class="modal-footer">
+                <button class="small" style="background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; padding: 12px 24px;" onclick="closeConfirmModal()">Cancel</button>
+                <button class="small danger" style="padding: 12px 24px;" onclick="confirmRegenerateKey()">Confirm Regenerate</button>
+            </div>
         </div>
     </div>
 </body>

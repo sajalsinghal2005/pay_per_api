@@ -1,11 +1,9 @@
-require('dotenv').config(); // Load environment variables FIRST
 const express = require('express');
 const nodemailer = require('nodemailer');
 const cors = require('cors');
 const path = require('path');
-const { db, dbRun, dbGet, dbAll } = require('./config/database');
-const authRoutes = require('./routes/auth');
-const weatherRoute = require("./routes/weather"); 
+require('dotenv').config();
+const db = require('./database');
 
 const app = express();
 app.use(cors());
@@ -25,35 +23,77 @@ process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception thrown:', err);
 });
 
-// --- Nodemailer & OTP Configuration ---
-// ✅ Use environment variables so credentials can be changed without editing code.
-const EMAIL_USER = process.env.EMAIL_USER || 'sajalsinghal62650@gmail.com';
-const EMAIL_PASS = process.env.EMAIL_PASS || 'mbexkymmjmukocsz';
 
+
+// --- Nodemailer Configuration (Optimized for Render/Cloud) ---
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: "smtp.gmail.com",
+    port: 465, // Use 465 for SSL (highly recommended for cloud servers)
+    secure: true,
     auth: {
-        user: EMAIL_USER,
-        pass: EMAIL_PASS
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASS
     },
-    connectionTimeout: 10000, // 10 seconds
-    greetingTimeout: 10000,   // 10 seconds
-    socketTimeout: 15000      // 15 seconds
+    // Adding timeout and connection pool for better reliability on Render
+    connectionTimeout: 10000, 
+    greetingTimeout: 10000,
+    socketTimeout: 30000,
+    pool: true 
 });
 
-// Verify SMTP configuration at startup for easier debugging.
-transporter.verify((err, success) => {
-    if (err) {
-        console.error('[Email] SMTP verification failed:', err.message);
+// Verify SMTP connection on startup (without crashing if it fails)
+transporter.verify((error, success) => {
+    if (error) {
+        console.warn("Nodemailer: Verification failed. Email notifications may not work.", error.message);
     } else {
-        console.log('[Email] SMTP connection verified');
+        console.log("Nodemailer: Server is ready to take messages");
     }
 });
+
+const sendEmail = async (to, subject, text, html) => {
+    try {
+        const info = await transporter.sendMail({
+            from: `"API Hub" <${process.env.GMAIL_USER}>`,
+            to,
+            subject,
+            text,
+            html
+        });
+        console.log("Email sent: %s", info.messageId);
+        return { success: true, messageId: info.messageId };
+    } catch (err) {
+        console.error("Email sending failed:", err);
+        return { success: false, error: err.message };
+    }
+};
 
 /* =========================
    DB HELPERS
 ========================= */
-// Redundant wrappers removed, using those from config/database.js
+
+const dbRun = (sql, params = []) =>
+    new Promise((resolve, reject) => {
+        db.run(sql, params, function (err) {
+            if (err) reject(err);
+            else resolve(this);
+        });
+    });
+
+const dbGet = (sql, params = []) =>
+    new Promise((resolve, reject) => {
+        db.get(sql, params, (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
+    });
+
+const dbAll = (sql, params = []) =>
+    new Promise((resolve, reject) => {
+        db.all(sql, params, (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
 
 // Blockchain Verification Helper (Monad Testnet)
 const RPC_URL = 'https://testnet-rpc.monad.xyz/';
@@ -112,19 +152,143 @@ async function verifyBlockchainTransaction(txHash) {
     }
 }
 
+// --- API Proxy Middleware ---
+async function validatePlatformKey(req, res, next) {
+    const apiKey = req.headers['x-api-key'];
+    const { apiSlug } = req.params;
+
+    if (!apiKey) {
+        return res.status(401).json({ success: false, message: "API Key is missing. Provide it in 'x-api-key' header." });
+    }
+
+    try {
+        // Find if this key belongs to a user and has access to the requested API slug
+        const access = await dbGet(`
+            SELECT ua.user_id, ua.api_id, a.api_slug, u.status as user_status
+            FROM user_apis ua
+            JOIN apis a ON ua.api_id = a.id
+            JOIN users u ON ua.user_id = u.id
+            WHERE ua.api_key = ? AND a.api_slug = ?
+        `, [apiKey, apiSlug]);
+
+        if (!access) {
+            return res.status(403).json({ success: false, message: "Invalid API Key or you haven't purchased access to this API." });
+        }
+
+        if (access.user_status === 'suspended') {
+            return res.status(403).json({ success: false, message: "Your account is suspended." });
+        }
+
+        // Attach user and API info to request
+        req.userAccess = access;
+        next();
+    } catch (err) {
+        res.status(500).json({ success: false, message: "Internal Server Error during validation." });
+    }
+}
+
+/* =========================
+   API PROXY ROUTE
+========================= */
+
+app.get('/api/proxy/:apiSlug', validatePlatformKey, async (req, res) => {
+    const { apiSlug } = req.params;
+    const { userAccess } = req;
+
+    try {
+        if (apiSlug === 'weather-cast') {
+            const city = req.query.city || 'London';
+            const units = req.query.units || 'metric';
+            const apiKey = process.env.OPENWEATHER_API_KEY;
+
+            if (!apiKey) {
+                return res.status(500).json({ success: false, message: "Weather provider key not configured on server." });
+            }
+
+            const response = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${city}&units=${units}&appid=${apiKey}`);
+            const data = await response.json();
+
+            // Log usage (simplified)
+            console.log(`User ${userAccess.user_id} called Weather API for city: ${city}`);
+
+            return res.status(response.status).json(data);
+        }
+
+        // Add more slugs here as needed
+        res.status(404).json({ success: false, message: "Proxy route for this API is not yet implemented." });
+
+    } catch (err) {
+        res.status(500).json({ success: false, message: "Error calling external provider: " + err.message });
+    }
+});
+
 /* =========================
    AUTH
 ========================= */
 
 /* =========================
-   AUTH SYSTEM (SIMPLIFIED - NO OTP)
+   AUTH SYSTEM (UNIFIED)
 ========================= */
 
-// Use the modular auth routes from routes/auth.js
-app.use('/', authRoutes);
-app.use("/api", weatherRoute);
+// 3. Login
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const user = await dbGet("SELECT * FROM users WHERE email=? AND password=?", [email, password]);
+        if (!user) return res.status(401).json({ success: false, message: 'Invalid email or password' });
+        if (user.status === 'suspended') return res.status(403).json({ success: false, message: 'Account suspended' });
 
-/* =========================
+        res.json({ success: true, user, message: 'Login successful.' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 4. Registration
+app.post('/register', async (req, res) => {
+    const { firstName, lastName, email, contact, password } = req.body;
+
+    const apiKey = 'ak_live_' + Math.random().toString(36).substring(2);
+
+    try {
+        await dbRun(
+            `INSERT INTO users (firstName, lastName, email, contact, password, role, status, apiKey) 
+             VALUES (?,?,?,?,?,?,?,?)`,
+            [firstName, lastName, email, contact, password, 'user', 'active', apiKey]
+        );
+        res.json({ success: true, message: 'Registration successful' });
+    } catch (err) {
+        if (err.message.includes('UNIQUE')) return res.status(400).json({ success: false, message: 'Email already exists' });
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 5. Forgot Password
+app.post('/forgot-password', async (req, res) => {
+    const { email } = req.body;
+    try {
+        const user = await dbGet("SELECT id FROM users WHERE email=?", [email]);
+        if (!user) return res.status(404).json({ success: false, message: 'No account with this email' });
+
+        res.json({ success: true, userId: user.id, message: 'User found.' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 6. Reset Password
+app.post('/reset-password', async (req, res) => {
+    const { userId, email, newPassword } = req.body;
+
+    try {
+        await dbRun("UPDATE users SET password=? WHERE id=?", [newPassword, userId]);
+        res.json({ success: true, message: 'Password updated' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
 
 /* =========================
    MARKETPLACE
@@ -527,6 +691,35 @@ app.get('/api/admin/stats', async (req, res) => {
     }
 });
 
+app.get('/api/admin/usage-stats', async (req, res) => {
+    try {
+        // Fetch top 5 active APIs or a sample to build the chart
+        const apis = await dbAll("SELECT id, name FROM apis WHERE status='active' LIMIT 5");
+
+        if (apis.length === 0) {
+            return res.json({ success: true, datasets: [] });
+        }
+
+        const colors = ['#1f4ed8', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
+
+        const datasets = apis.map((api, index) => {
+            const baseTraffic = (api.id * 1500) + 2000;
+            const data = Array.from({ length: 7 }, () => Math.floor(baseTraffic + (Math.random() * 3000)));
+
+            return {
+                label: api.name,
+                data: data,
+                backgroundColor: colors[index % colors.length],
+                borderRadius: 4,
+            };
+        });
+
+        res.json({ success: true, datasets });
+    } catch (err) {
+        res.json({ success: false, datasets: [] });
+    }
+});
+
 app.get('/api/admin/users/:id/apis', async (req, res) => {
     try {
         const apis = await dbAll(`
@@ -619,6 +812,56 @@ app.put('/api/admin/apis/:id', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.json({ success: false, message: err.message });
+    }
+});
+
+app.post('/api/apis/purchase-credits', async (req, res) => {
+    const { userId, apiId } = req.body;
+    try {
+        const user = await dbGet(`SELECT credits FROM users WHERE id = ?`, [userId]);
+        const api = await dbGet(`SELECT name, price FROM apis WHERE id = ?`, [apiId]);
+
+        if (!user || !api) return res.status(404).json({ success: false, message: 'User or API not found' });
+        if (user.credits < api.price) return res.status(400).json({ success: false, message: 'Insufficient wallet balance.' });
+
+        const existing = await dbGet(`SELECT id FROM user_apis WHERE user_id = ? AND api_id = ?`, [userId, apiId]);
+        if (existing) return res.status(400).json({ success: false, message: 'You already own this API.' });
+
+        const newBalance = user.credits - api.price;
+        const generatedApiKey = 'AK_LIVE_' + Math.random().toString(36).substring(2).toUpperCase();
+
+        await dbRun(`UPDATE users SET credits = ? WHERE id = ?`, [newBalance, userId]);
+        await dbRun(`INSERT INTO user_apis (user_id, api_id, api_key) VALUES (?, ?, ?)`, [userId, apiId, generatedApiKey]);
+        await dbRun(
+            `INSERT INTO transactions (user_id, type, amount, description) VALUES (?, 'purchase', ?, ?)`,
+            [userId, api.price, `Purchased API: ${api.name}`]
+        );
+
+        res.json({ success: true, message: 'Purchase successful!', newBalance, api_key: generatedApiKey });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post('/api/apis/purchase-crypto', async (req, res) => {
+    const { userId, apiId, txHash, walletAddress } = req.body;
+    try {
+        const api = await dbGet(`SELECT name FROM apis WHERE id = ?`, [apiId]);
+
+        const existing = await dbGet(`SELECT id FROM user_apis WHERE user_id = ? AND api_id = ?`, [userId, apiId]);
+        if (existing) return res.status(400).json({ success: false, message: 'You already own this API.' });
+
+        const generatedApiKey = 'AK_LIVE_CRYPTO_' + Math.random().toString(36).substring(2).toUpperCase();
+
+        await dbRun(`INSERT INTO user_apis (user_id, api_id, api_key) VALUES (?, ?, ?)`, [userId, apiId, generatedApiKey]);
+        await dbRun(
+            `INSERT INTO transactions (user_id, type, amount, description, tx_hash) VALUES (?, 'purchase', ?, ?, ?)`,
+            [userId, 0, `Purchased API (Crypto): ${api.name} from ${walletAddress}`, txHash]
+        );
+
+        res.json({ success: true, message: 'Purchase successful!', api_key: generatedApiKey });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 
