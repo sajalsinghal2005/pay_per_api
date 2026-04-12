@@ -6,11 +6,47 @@ const path = require('path');
 const { db, dbRun, dbGet, dbAll } = require('./config/database');
 const authRoutes = require('./routes/auth');
 const weatherRoute = require("./routes/weather"); 
+const paymentRoute = require("./routes/payment");
+
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
+
+// Override CSP for all responses - MUST come before express.static
+app.use((req, res, next) => {
+    // Remove any existing CSP headers
+    res.removeHeader('Content-Security-Policy');
+    res.removeHeader('X-Content-Security-Policy');
+    
+    // Set permissive CSP
+    res.setHeader('Content-Security-Policy',
+        "default-src 'self'; " +
+        "connect-src 'self' http://localhost:3001 https:; " +
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' https://fonts.gstatic.com; " +
+        "img-src 'self' data: https:;"
+    );
+    next();
+});
+
 app.use(express.static(__dirname));
+
+// Override CSP again for static files (second pass)
+app.use((req, res, next) => {
+    res.removeHeader('Content-Security-Policy');
+    res.setHeader('Content-Security-Policy',
+        "default-src 'self'; " +
+        "connect-src 'self' http://localhost:3001 https:; " +
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' https://fonts.gstatic.com; " +
+        "img-src 'self' data: https:;"
+    );
+    next();
+});
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
@@ -123,6 +159,7 @@ async function verifyBlockchainTransaction(txHash) {
 // Use the modular auth routes from routes/auth.js
 app.use('/', authRoutes);
 app.use("/api", weatherRoute);
+app.use("/api", paymentRoute);
 
 /* =========================
 
