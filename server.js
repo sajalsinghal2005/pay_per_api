@@ -4,9 +4,12 @@ const nodemailer = require('nodemailer');
 const cors = require('cors');
 const path = require('path');
 const { db, dbRun, dbGet, dbAll } = require('./config/database');
+const connectMongo = require('./config/mongo');
 const authRoutes = require('./routes/auth');
-const weatherRoute = require("./routes/weather"); 
-const paymentRoute = require("./routes/payment");
+const weatherRoute = require('./routes/weather');
+const paymentRoute = require('./routes/payment');
+const authMiddleware = require('./middleware/auth');
+const Usage = require('./models/Usage');
 
 
 const app = express();
@@ -157,9 +160,23 @@ async function verifyBlockchainTransaction(txHash) {
 ========================= */
 
 // Use the modular auth routes from routes/auth.js
-app.use('/', authRoutes);
-app.use("/api", weatherRoute);
-app.use("/api", paymentRoute);
+app.use('/api/auth', authRoutes);
+app.use('/api', weatherRoute);
+app.use('/api', paymentRoute);
+
+app.get('/api/dashboard/usage', authMiddleware, async (req, res) => {
+  try {
+    const history = await Usage.find({ user: req.user._id })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+
+    res.json({ success: true, history });
+  } catch (error) {
+    console.error('[Dashboard] Usage error:', error);
+    res.status(500).json({ success: false, message: 'Unable to load usage history.' });
+  }
+});
 
 /* =========================
 
@@ -704,10 +721,17 @@ app.get('/api/admin/billing', async (req, res) => {
    START SERVER
 ========================= */
 
-const PORT = process.env.PORT || 3001;
+const startServer = async () => {
+  try {
+    await connectMongo();
+    const PORT = process.env.PORT || 3001;
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  } catch (err) {
+    console.error('MongoDB connection failed:', err);
+    process.exit(1);
+  }
+};
 
-app.listen(PORT, () =>
-    console.log(`Server running on port ${PORT}`)
-);
+startServer();
 
 module.exports = app;

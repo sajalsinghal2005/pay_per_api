@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login | Pay Per API</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-page="login">
+  <div class="auth-shell">
+    <div class="auth-card">
+      <h1>Welcome Back</h1>
+      <p>Sign in to access your API dashboard.</p>
+      <form id="login-form" class="form-grid" autocomplete="off">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="you@example.com" required autocomplete="off" />
+
+        <label>Password</label>
+        <div class="password-field">
+          <input type="password" id="login-password" placeholder="Enter your password" required autocomplete="new-password" />
+          <button type="button" class="icon-button" id="toggle-login-password">👁</button>
+        </div>
+
+        <button class="button button-primary" type="submit">Login</button>
+      </form>
+      <p class="page-note">New here? <a href="signup.html">Create an account</a></p>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

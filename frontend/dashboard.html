@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard | Pay Per API</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-page="dashboard">
+  <div class="page-shell dashboard-shell">
+    <header class="topbar dashboard-topbar">
+      <div class="brand">Pay Per API</div>
+      <div class="nav-actions">
+        <span id="dashboard-user"></span>
+        <button class="button button-secondary" id="logout-button">Logout</button>
+      </div>
+    </header>
+
+    <main class="dashboard-grid">
+      <section class="card welcome-card">
+        <h2>Welcome back, <span id="dashboard-firstName"></span></h2>
+        <p>Monitor your API key, credits, and usage from one screen.</p>
+      </section>
+
+      <section class="card stats-card">
+        <h3>Your profile</h3>
+        <div class="stat-row"><strong>Email:</strong> <span id="dashboard-email"></span></div>
+        <div class="stat-row"><strong>Credits:</strong> <span id="dashboard-credits"></span></div>
+        <div class="stat-row"><strong>API key:</strong> <span id="dashboard-apiKey"></span></div>
+        <button class="button button-primary" id="regenerate-key">Regenerate API Key</button>
+      </section>
+
+      <section class="card usage-card">
+        <div class="card-header">
+          <h3>Usage history</h3>
+          <button class="button button-secondary" id="refresh-usage">Refresh</button>
+        </div>
+        <div id="usage-list" class="usage-list"></div>
+      </section>
+
+      <section class="card api-card">
+        <h3>Available demo APIs</h3>
+        <p>Call the protected endpoint using your API key.</p>
+        <ul class="api-list">
+          <li>Protected Demo API</li>
+          <li>Real Weather API</li>
+          <li>Usage tracking</li>
+        </ul>
+        <button class="button button-primary" id="call-protected-api">Call Protected API</button>
+        <div class="api-group">
+          <input id="weather-city" type="text" placeholder="Enter a city, e.g. London" />
+          <button class="button button-secondary" id="call-weather-api">Call Real Weather API</button>
+        </div>
+        <p id="api-response" class="api-response"></p>
+        <p id="weather-response" class="api-response"></p>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

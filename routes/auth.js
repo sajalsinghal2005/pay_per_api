@@ -1,351 +1,136 @@
-/**
- * Authentication Routes
- * POST /register - Register new user
- * POST /login - Login user
- * POST /forgot-password - Request password reset
- * POST /reset-password - Reset password with email and new password
- */
-
 const express = require('express');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
 const router = express.Router();
-const { dbGet, dbRun } = require('../config/database');
-const { sendEmail } = require('../config/email');
-const { isValidEmail, isValidPassword, validateRegistration } = require('../utils/validators');
 
-/**
- * POST /register
- * Register new user - creates account immediately
- */
-router.post('/register', async (req, res) => {
-    try {
-        const { firstName, lastName, email, contact, password } = req.body;
+const generateApiKey = () => {
+  return 'api_' + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+};
 
-        // Validate input
-        const validation = validateRegistration({ firstName, lastName, email, password });
-        if (!validation.valid) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Validation failed',
-                errors: validation.errors
-            });
-        }
+const createToken = (user) => {
+  return jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '1d'
+  });
+};
 
-        // Check if user already exists
-        const existingUser = await dbGet("SELECT id FROM users WHERE email=?", [email]);
-        if (existingUser) {
-            return res.status(409).json({ 
-                success: false, 
-                message: 'Email already registered' 
-            });
-        }
-
-        // Generate API key
-        const apiKey = 'ak_live_' + Math.random().toString(36).substring(2);
-
-        // Insert user directly
-        await dbRun(
-            `INSERT INTO users (firstName, lastName, email, contact, password, role, status, apiKey, credits) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [firstName, lastName, email, contact, password, 'user', 'active', apiKey, 500]
-        );
-
-        console.log(`[Auth] ✓ User registered: ${email}`);
-
-        res.json({ 
-            success: true, 
-            message: 'Registration successful. You can now login.' 
-        });
-
-    } catch (error) {
-        console.error('[Auth] Register error:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Registration failed. Please try again.' 
-        });
-    }
+const createUserResponse = (user) => ({
+  id: user._id,
+  firstName: user.firstName,
+  lastName: user.lastName,
+  email: user.email,
+  apiKey: user.apiKey,
+  credits: user.credits
 });
 
-/**
- * POST /login
- * Login user with email and password
- */
+const handleRegister = async (req, res) => {
+  try {
+    const { firstName, lastName, email, password } = req.body;
+
+    if (!firstName || !lastName || !email || !password || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide first name, last name, valid email, and a password with at least 6 characters.'
+      });
+    }
+
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(409).json({ success: false, message: 'Email already registered.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      apiKey: generateApiKey(),
+      credits: 1000
+    });
+
+    const token = createToken(user);
+    res.json({ success: true, message: 'Signup successful.', token, user: createUserResponse(user) });
+  } catch (error) {
+    console.error('[Auth] Signup error:', error);
+    res.status(500).json({ success: false, message: 'Signup failed.' });
+  }
+};
+
+router.post('/register', handleRegister);
+router.post('/signup', handleRegister);
+
 router.post('/login', async (req, res) => {
-    try {
-        const { email, password } = req.body;
-
-        if (!email || !password) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Email and password are required' 
-            });
-        }
-
-        // Find user and fetch all data
-        const user = await dbGet(
-            "SELECT id, firstName, lastName, email, password, role, status, apiKey, credits, contact FROM users WHERE email=?",
-            [email]
-        );
-
-        if (!user || user.password !== password) {
-            return res.status(401).json({ 
-                success: false, 
-                message: 'Invalid email or password' 
-            });
-        }
-
-        if (user.status === 'suspended') {
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Account suspended. Contact support.' 
-            });
-        }
-
-        console.log(`[Auth] ✓ Login successful: ${email}`);
-
-        // Return full user data directly
-        res.json({ 
-            success: true,
-            message: 'Login successful',
-            user: {
-                id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                contact: user.contact,
-                role: user.role,
-                apiKey: user.apiKey,
-                credits: user.credits
-            }
-        });
-
-    } catch (error) {
-        console.error('[Auth] Login error:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Login failed' 
-        });
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password are required.' });
     }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+    }
+
+    const token = createToken(user);
+    res.json({ success: true, message: 'Login successful.', token, user: createUserResponse(user) });
+  } catch (error) {
+    console.error('[Auth] Login error:', error);
+    res.status(500).json({ success: false, message: 'Login failed.' });
+  }
 });
 
-/**
- * POST /forgot-password
- * Request password reset - user will enter new password
- */
-router.post('/forgot-password', async (req, res) => {
-    try {
-        const { email } = req.body;
+router.get('/me', async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
-        if (!email || !isValidEmail(email)) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Valid email is required' 
-            });
-        }
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Authorization token missing.' });
+  }
 
-        // Check if user exists
-        const user = await dbGet("SELECT id, firstName FROM users WHERE email=?", [email]);
-        if (!user) {
-            // Don't reveal if email exists (security)
-            return res.json({ 
-                success: true, 
-                message: 'If account exists, you can reset your password' 
-            });
-        }
-
-        console.log(`[Auth] ✓ Forgot password requested for: ${email}`);
-
-        res.json({ 
-            success: true, 
-            message: 'You can reset your password now',
-            userId: user.id,
-            userName: user.firstName
-        });
-
-    } catch (error) {
-        console.error('[Auth] Forgot password error:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Request failed' 
-        });
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(payload.id).select('-password');
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User not found.' });
     }
+
+    res.json({ success: true, user: createUserResponse(user) });
+  } catch (error) {
+    console.error('[Auth] Me error:', error);
+    res.status(401).json({ success: false, message: 'Invalid or expired token.' });
+  }
 });
 
-/**
- * POST /reset-password
- * Reset password - requires email and new password
- */
-router.post('/reset-password', async (req, res) => {
-    try {
-        const { email, newPassword } = req.body;
+router.post('/regenerate-api-key', async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
-        if (!email || !newPassword) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Email and new password are required' 
-            });
-        }
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Authorization token missing.' });
+  }
 
-        // Validate password
-        const passwordCheck = isValidPassword(newPassword);
-        if (!passwordCheck.valid) {
-            return res.status(400).json({ 
-                success: false, 
-                message: passwordCheck.message 
-            });
-        }
-
-        // Find and update user
-        const user = await dbGet("SELECT id FROM users WHERE email=?", [email]);
-        if (!user) {
-            return res.status(404).json({ 
-                success: false, 
-                message: 'User not found' 
-            });
-        }
-
-        await dbRun(
-            "UPDATE users SET password=? WHERE id=?",
-            [newPassword, user.id]
-        );
-
-        console.log(`[Auth] ✓ Password reset: ${email}`);
-
-        res.json({ 
-            success: true, 
-            message: 'Password updated successfully. Please login with your new password.' 
-        });
-
-    } catch (error) {
-        console.error('[Auth] Reset password error:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Password reset failed' 
-        });
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(payload.id);
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User not found.' });
     }
-});
 
-/**
- * POST /login-metamask
- * Login user with MetaMask wallet address
- */
-router.post('/login-metamask', async (req, res) => {
-    try {
-        const { walletAddress } = req.body;
+    user.apiKey = generateApiKey();
+    await user.save();
 
-        if (!walletAddress) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Wallet address is required' 
-            });
-        }
-
-        // Normalize wallet address (to lowercase for case-insensitive lookup)
-        const normalizedAddress = walletAddress.toLowerCase();
-
-        // Find user by wallet address
-        const user = await dbGet(
-            "SELECT id, firstName, lastName, email, role, status, apiKey, credits, contact FROM users WHERE LOWER(walletAddress)=?",
-            [normalizedAddress]
-        );
-
-        if (!user) {
-            return res.status(401).json({ 
-                success: false, 
-                message: 'Wallet not linked to any account. Please sign up first and link your wallet.' 
-            });
-        }
-
-        if (user.status !== 'active') {
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Account is not active' 
-            });
-        }
-
-        console.log(`[Auth] ✓ MetaMask login: ${normalizedAddress} (${user.email})`);
-
-        res.json({ 
-            success: true,
-            user: {
-                id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                contact: user.contact,
-                role: user.role,
-                apiKey: user.apiKey,
-                credits: user.credits,
-                walletAddress: walletAddress
-            }
-        });
-
-    } catch (error) {
-        console.error('[Auth] MetaMask login error:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Server error' 
-        });
-    }
-});
-
-/**
- * POST /api/auth/login-confirm
- * Get user data after OTP verification
- */
-router.post('/api/auth/login-confirm', async (req, res) => {
-    try {
-        const { email, otp } = req.body;
-
-        if (!email) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Email is required' 
-            });
-        }
-
-        // Fetch full user data
-        const user = await dbGet(
-            "SELECT id, firstName, lastName, email, role, status, apiKey, credits, contact FROM users WHERE email=?",
-            [email]
-        );
-
-        if (!user) {
-            return res.status(401).json({ 
-                success: false, 
-                message: 'User not found' 
-            });
-        }
-
-        if (user.status !== 'active') {
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Account is not active' 
-            });
-        }
-
-        console.log(`[Auth] ✓ User logged in: ${email}`);
-
-        res.json({ 
-            success: true,
-            user: {
-                id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                contact: user.contact,
-                role: user.role,
-                apiKey: user.apiKey,
-                credits: user.credits
-            }
-        });
-
-    } catch (error) {
-        console.error('[Auth] Login confirm error:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Server error' 
-        });
-    }
+    res.json({ success: true, message: 'API key regenerated.', apiKey: user.apiKey });
+  } catch (error) {
+    console.error('[Auth] Regenerate API key error:', error);
+    res.status(401).json({ success: false, message: 'Invalid or expired token.' });
+  }
 });
 
 module.exports = router;
