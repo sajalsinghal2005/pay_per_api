@@ -56,17 +56,21 @@ const initLogin = () => {
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
 
-    const data = await apiRequest('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password })
-    });
+    try {
+      const data = await apiRequest('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
 
-    if (data.success) {
-      saveAuth(data.token, data.user);
-      showToast('Login successful');
-      window.location.href = 'dashboard.html';
-    } else {
-      showToast(data.message || 'Login failed', 'error');
+      if (data.token) {
+        saveAuth(data.token, data.user);
+        showToast('Login successful');
+        window.location.href = 'dashboard.html';
+      } else {
+        showToast(data.message || 'Login failed', 'error');
+      }
+    } catch (error) {
+      showToast('Unable to connect to the server. Please try again later.', 'error');
     }
   });
 };
@@ -87,17 +91,21 @@ const initSignup = () => {
     const email = document.getElementById('signup-email').value.trim();
     const password = document.getElementById('signup-password').value;
 
-    const data = await apiRequest('/api/auth/signup', {
-      method: 'POST',
-      body: JSON.stringify({ firstName, lastName, email, password })
-    });
+    try {
+      const data = await apiRequest('/api/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({ firstName, lastName, email, password })
+      });
 
-    if (data.success) {
-      saveAuth(data.token, data.user);
-      showToast('Account created successfully');
-      window.location.href = 'dashboard.html';
-    } else {
-      showToast(data.message || 'Signup failed', 'error');
+      if (data.token) {
+        saveAuth(data.token, data.user);
+        showToast('Account created successfully');
+        window.location.href = 'dashboard.html';
+      } else {
+        showToast(data.message || 'Signup failed', 'error');
+      }
+    } catch (error) {
+      showToast('Unable to connect to the server. Please try again later.', 'error');
     }
   });
 };
