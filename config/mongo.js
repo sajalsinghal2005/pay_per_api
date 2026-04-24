@@ -1,14 +1,23 @@
 const mongoose = require('mongoose');
+const dns = require('dns');
 
 const connectMongo = async () => {
   try {
-    const uri = process.env.MONGODB_URI;
+    const uri = process.env.MONGO_URI || process.env.MONGODB_URI;
 
     if (!uri) {
-      throw new Error('MONGODB_URI is required in environment variables');
+      throw new Error('MONGO_URI or MONGODB_URI is required in environment variables');
     }
 
-    await mongoose.connect(uri);
+    if (uri.startsWith('mongodb+srv://')) {
+      dns.setServers(['8.8.8.8', '8.8.4.4']);
+    }
+
+    await mongoose.connect(uri, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000,
+    });
 
     console.log('MongoDB connected ✅');
   } catch (error) {
