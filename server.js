@@ -15,48 +15,37 @@ const Usage = require('./models/Usage');
 const app = express();
 
 app.use(cors());
+app.options('*', cors());
 app.use(express.json());
 
-// Override CSP for all responses - MUST come before express.static
+// Override CSP for all responses - MUST come before any static or pages are served
 app.use((req, res, next) => {
-    // Remove any existing CSP headers
     res.removeHeader('Content-Security-Policy');
     res.removeHeader('X-Content-Security-Policy');
-    
-    // Set permissive CSP
     res.setHeader('Content-Security-Policy',
         "default-src 'self'; " +
-        "connect-src 'self' http://localhost:3001 https:; " +
+        "connect-src 'self' https://pay-per-api-3.onrender.com https:; " +
         "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; " +
         "font-src 'self' https://fonts.gstatic.com; " +
         "img-src 'self' data: https:;"
     );
     next();
 });
 
-app.use(express.static(__dirname));
-
-// Override CSP again for static files (second pass)
-app.use((req, res, next) => {
-    res.removeHeader('Content-Security-Policy');
-    res.setHeader('Content-Security-Policy',
-        "default-src 'self'; " +
-        "connect-src 'self' http://localhost:3001 https:; " +
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-        "font-src 'self' https://fonts.gstatic.com; " +
-        "img-src 'self' data: https:;"
-    );
-    next();
-});
+// Allow static files to be served from the public folder
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/api', (req, res) => {
-    res.json({ success: true, message: 'API is running' });
+    res.json({ success: true, message: 'API is running 🚀' });
+});
+
+app.get('/status', (req, res) => {
+    res.send('API is running 🚀');
 });
 
 // Global Error Handlers to prevent crash
