@@ -347,6 +347,43 @@ git push heroku main
 heroku config:set PORT=3001
 ```
 
+### Frontend Setup
+The frontend is built with simple HTML, CSS, and JavaScript using these files:
+- `index.html`
+- `login.html`
+- `signup.html`
+- `dashboard.html`
+- `styles.css`
+- `app.js`
+
+#### Local development
+1. Keep `app.js` configured for local backend:
+   ```js
+   const API_BASE_URL = 'http://localhost:3001';
+   ```
+2. Start your backend server:
+   ```bash
+   npm run dev
+   ```
+3. Open `index.html` in your browser or serve it with a static server.
+
+#### Deploying the frontend with your backend
+If your backend is deployed at `https://your-backend-url.com`, update `app.js` to:
+```js
+const API_BASE_URL = 'https://your-backend-url.com';
+```
+
+If you host the frontend from the same server, you can use a relative base URL instead:
+```js
+const API_BASE_URL = '';
+```
+
+#### Verify frontend/backend connection
+- Open the login page: `login.html`
+- Create an account with `signup.html`
+- After login, use `dashboard.html`
+- Test weather calls and watch credits update
+
 ### Environment Variables on Cloud
 1. Go to your deployment dashboard
 2. Add environment variables from `.env`

@@ -55,6 +55,10 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+app.get('/api', (req, res) => {
+    res.json({ success: true, message: 'API is running' });
+});
+
 // Global Error Handlers to prevent crash
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);

@@ -1,0 +1,150 @@
+﻿:root {
+  color-scheme: light;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 16px;
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  min-height: 100vh;
+}
+
+a {
+  text-decoration: none;
+}
+
+.page-shell {
+  min-height: 100vh;
+}
+
+.content-card {
+  max-width: 980px;
+  width: 100%;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 700;
+  color: #2563eb;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.hero-copy h1 {
+  font-size: clamp(2.5rem, 4vw, 3.5rem);
+  line-height: 1.05;
+}
+
+.info-card {
+  min-height: 240px;
+}
+
+.card-brand {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.btn-primary {
+  min-width: 150px;
+}
+
+.form-card {
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.form-label {
+  font-weight: 600;
+}
+
+.section-title {
+  font-weight: 700;
+}
+
+.dashboard-grid {
+  gap: 1.5rem;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.card-soft {
+  border: 1px solid rgba(99, 102, 241, 0.16);
+}
+
+.card-soft h5 {
+  margin-bottom: 0.85rem;
+}
+
+.alert-box {
+  border-radius: 16px;
+  padding: 1rem 1.2rem;
+  margin-top: 1rem;
+  display: none;
+}
+
+.alert-success {
+  background: #ecfdf5;
+  color: #166534;
+}
+
+.alert-error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.loader::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  border: 3px solid rgba(59, 130, 246, 0.25);
+  border-top-color: #2563eb;
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.footer-note {
+  opacity: 0.75;
+}
+
+@media (max-width: 900px) {
+  .content-card {
+    padding: 2rem !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .content-card {
+    border-radius: 24px;
+  }
+}
