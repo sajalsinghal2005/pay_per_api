@@ -1,19 +1,20 @@
 const mongoose = require('mongoose');
 
 const connectMongo = async () => {
-  const MONGO_URI = process.env.MONGODB_URI || "mongodb+srv://sajal:sajal12345@cluster0.acw0pev.mongodb.net/payperapi?retryWrites=true&w=majority";
+  try {
+    const uri = process.env.MONGODB_URI;
 
-mongoose.connect(MONGO_URI)
-  if (!uri) {
-    throw new Error('MONGODB_URI is required in .env');
+    if (!uri) {
+      throw new Error('MONGODB_URI is required in environment variables');
+    }
+
+    await mongoose.connect(uri);
+
+    console.log('MongoDB connected ✅');
+  } catch (error) {
+    console.error('MongoDB connection failed:', error);
+    process.exit(1);
   }
-
-  await mongoose.connect(uri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-  });
-
-  console.log('Connected to MongoDB');
 };
 
 module.exports = connectMongo;

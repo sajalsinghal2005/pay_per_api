@@ -3,9 +3,9 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 
 const connectDB = async () => {
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env.MONGO_URI;
   if (!uri) {
-    throw new Error('MONGODB_URI is required in .env');
+    throw new Error('MONGO_URI is required in .env');
   }
 
   await mongoose.connect(uri, {
