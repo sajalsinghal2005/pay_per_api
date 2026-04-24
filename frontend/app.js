@@ -46,10 +46,10 @@ const initLogin = () => {
   const loginForm = document.getElementById('login-form');
   const passwordToggle = document.getElementById('toggle-login-password');
 
-  passwordToggle.addEventListener('click', () => {
-    const input = document.getElementById('login-password');
-    input.type = input.type === 'password' ? 'text' : 'password';
-  });
+passwordToggle.addEventListener('click', () => {
+  const input = document.getElementById('login-password');
+  input.type = input.type === 'password' ? 'text' : 'password';
+});
 
   loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
