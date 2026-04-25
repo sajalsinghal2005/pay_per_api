@@ -43,7 +43,9 @@ const initLanding = () => {
 };
 
 const initLogin = () => {
+  console.log('initLogin called');
   const loginForm = document.getElementById('login-form');
+  console.log('loginForm:', loginForm);
   const passwordToggle = document.getElementById('toggle-login-password');
 
 if (passwordToggle) {
@@ -54,24 +56,31 @@ if (passwordToggle) {
 }
 
   loginForm.addEventListener('submit', async (event) => {
+    console.log('Login form submitted');
     event.preventDefault();
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
+    console.log('Email:', email, 'Password length:', password.length);
 
     try {
+      console.log('Making API request to login');
       const data = await apiRequest('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password })
       });
+      console.log('API response:', data);
 
       if (data.token) {
+        console.log('Login successful, saving auth and redirecting');
         saveAuth(data.token, data.user);
         showToast('Login successful');
         window.location.href = 'dashboard.html';
       } else {
+        console.log('Login failed:', data.message);
         showToast(data.message || 'Login failed', 'error');
       }
     } catch (error) {
+      console.log('Login error:', error);
       showToast('Unable to connect to the server. Please try again later.', 'error');
     }
   });
